@@ -26,13 +26,30 @@ agent = QLearningAgent(
     num_actions= NUM_ACTIONS
 )
 
-# to send the controller the states and allowed actions
+class ClusterState(BaseModel):
+    pod_count: int
+    cpu_usage: float # in percentage
+    is_crashed: bool #are any pods crashed
+
+def get_cpu_level(usage: float) -> int:
+    interval = 100 / CPU_LEVELS
+    level = int(usage / interval)
+    return min(level, CPU_LEVELS - 1)
+
+def get_action_string(action_id: int) -> str:
+    mapping = {
+        0: "ScaleUp",
+        1: "ScaleDown",
+        2: "None",
+        3: "Restart"
+    }
+    return mapping.get(action_id, "None")
+
 class StateRequest(BaseModel):
     cpu_level: int
     replicas: int
     allowed_actions: Optional[List[int]] = None
-
-# to send the controller the learning feedback
+    
 class LearnRequest(BaseModel):
     state: StateRequest
     action: int
@@ -43,6 +60,15 @@ class LearnRequest(BaseModel):
 @app.get("/")
 def read_root():
     return {"status": "Learning Engine is Running", "agent": str(agent)}
+
+@app.post("/decide")
+def decide(req: ClusterState):
+    cpu_level = get_cpu_level(req.cpu_usage)
+    current_replicas = min(req.pod_count, REPLICA_LEVELS - 1)
+    state_idx = cpu_level * REPLICA_LEVELS + current_replicas
+    action_id = agent.select_action(state_idx, allowed_actions=None)
+    action_str = get_action_string(action_id)
+    return {"action": action_str}
 
 @app.post("/predict")
 # gets the current state and returns the recommended action by the agent
@@ -61,7 +87,8 @@ def get_action(req: StateRequest):
     return {
         "recommended_action": action,
         "state_index": state_idx,
-        "q_values": agent.q_table[state_idx]# returning the Q-values for the given state
+        "action_string": get_action_string(action),
+        "q_values": agent.q_table[state_idx]
     }
 
 @app.post("/train")
