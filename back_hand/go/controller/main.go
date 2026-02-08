@@ -125,6 +125,20 @@ func main() {
 			fmt.Printf("State: [Pods: %d, CPU: %.2f%%] -> Brain says: %s\n",
 				state.PodCount, state.CpuUsage, agentResp.Action)
 
+			switch agentResp.Action {
+			case "ScaleUp":
+				fmt.Println("Scaling UP")
+				scaleDeployment(clientset, "yair-api-python", 1)
+			case "ScaleDown":
+				if currentPodCount > 1 {
+					fmt.Println("Scaling DOWN")
+					scaleDeployment(clientset, "yair-api-python", -1)
+				}
+			case "Restart":
+				fmt.Println(" Restart requested")
+			case "None":
+				fmt.Println("No action")
+			}
 		}
 		time.Sleep(5 * time.Second)
 	}
