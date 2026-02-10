@@ -14,6 +14,13 @@ from agents.config import RLConfig
 from agents.q_learning.q_learning import QLearningAgent
 from agents.q_learning.mock_env import CPU_LEVELS, REPLICA_LEVELS
 
+LOW_CPU = 33
+MEDIUM_CPU = 66
+
+LOW_LEVEL = 0
+MEDIUM_LEVEL = 1
+HIGH_LEVEL = 2
+
 app = FastAPI(title="K8s RL Learning Engine")
 NUM_ACTIONS = 4
 MIN_INDEX = 0
@@ -32,9 +39,12 @@ class ClusterState(BaseModel):
     is_crashed: bool #are any pods crashed
 
 def get_cpu_level(usage: float) -> int:
-    interval = 100 / CPU_LEVELS
-    level = int(usage / interval)
-    return min(level, CPU_LEVELS - 1)
+    if usage < LOW_CPU:
+        return LOW_LEVEL
+    elif usage < MEDIUM_CPU:
+        return MEDIUM_LEVEL
+    else:
+        return HIGH_LEVEL
 
 def get_action_string(action_id: int) -> str:
     mapping = {

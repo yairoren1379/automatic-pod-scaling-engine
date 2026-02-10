@@ -20,6 +20,14 @@ import (
 	"k8s.io/utils/pointer"
 )
 
+const (
+	LowCPU    = 33
+	MediumCPU = 66
+	LowLevel  = 0
+	MedLevel  = 1
+	HighLevel = 2
+)
+
 // define the structure of the cluster state
 // that will be sent to Python
 type ClusterState struct {
@@ -31,6 +39,45 @@ type ClusterState struct {
 // define the structure of the response from Python
 type AgentResponse struct {
 	Action string `json:"action"`
+}
+
+type StateRequest struct {
+	CpuLevel int `json:"cpu_level"`
+	Replicas int `json:"replicas"`
+}
+
+type LearnRequest struct {
+	State     StateRequest `json:"state"`
+	Action    int          `json:"action"`
+	Reward    float64      `json:"reward"`
+	NextState StateRequest `json:"next_state"`
+	Done      bool         `json:"done"`
+}
+
+func getCPULevel(usage float64) int {
+	if usage < LowCPU {
+		return LowLevel
+	} else if usage < MediumCPU {
+		return MedLevel
+	}
+	return HighLevel
+}
+
+func calculateReward(cpuLevel int, action int) float64 {
+	// Action IDs: 0: ScaleUp, 1: ScaleDown, 2: None
+	if cpuLevel == HighLevel && action == 0 {
+		return 10.0 // Good: Scaled up during high load
+	}
+	if cpuLevel == LowLevel && action == 1 {
+		return 10.0 // Good: Scaled down during low load
+	}
+	if cpuLevel == LowLevel && action == 0 {
+		return -10.0 // Bad: Waste of resources
+	}
+	if cpuLevel == HighLevel && action == 1 {
+		return -10.0 // Bad: Scaling down during high load
+	}
+	return 1.0 // Neutral: Stayed same or handled medium load
 }
 
 func scaleDeployment(clientset *kubernetes.Clientset, deploymentName string, change int32) {
