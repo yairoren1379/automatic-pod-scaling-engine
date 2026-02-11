@@ -75,6 +75,8 @@ def decide(req: ClusterState):
     current_replicas = min(req.pod_count, REPLICA_LEVELS - 1)
     state_idx = cpu_level * REPLICA_LEVELS + current_replicas
     safe_actions = safety_bandit.get_safe_actions(max_failure_rate=0.2)
+    if not safe_actions:
+        safe_actions = [0, 1, 2, 3]
     action_id = agent.select_action(state_idx, allowed_actions=safe_actions)
     action_str = get_action_string(action_id)
     return {"action": action_str}
@@ -123,7 +125,7 @@ def update_agent(req: LearnRequest):
     )
     
     step_counter += 1
-    if step_counter % 1 == 5: # מדפיס כל 5 אימונים
+    if step_counter % 2 == 0: # print every 2 steps
         print(f"\n--- Q-Table Snapshot (Step {step_counter}) ---")
         print(f"Current State [CPU:{req.state.cpu_level}, Pods:{current_replicas}] Index: {state_idx}")
         print(f"Action Taken: {get_action_string(req.action)} | Reward: {req.reward}")
