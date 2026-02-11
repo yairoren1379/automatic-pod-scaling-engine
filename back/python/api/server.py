@@ -13,6 +13,7 @@ sys.path.append(project_root)
 from agents.config import RLConfig
 from agents.q_learning.q_learning import QLearningAgent
 from agents.q_learning.mock_env import CPU_LEVELS, REPLICA_LEVELS
+from agents.bandit.bandit_safety import SafetyBandit
 
 from config import LOW_CPU, MEDIUM_CPU, LOW_LEVEL, MEDIUM_LEVEL, HIGH_LEVEL
 
@@ -27,6 +28,8 @@ agent = QLearningAgent(
     num_states=num_states,
     num_actions= NUM_ACTIONS
 )
+
+safety_bandit = SafetyBandit(arms_count=NUM_ACTIONS)
 
 class ClusterState(BaseModel):
     pod_count: int
@@ -71,7 +74,8 @@ def decide(req: ClusterState):
     cpu_level = get_cpu_level(req.cpu_usage)
     current_replicas = min(req.pod_count, REPLICA_LEVELS - 1)
     state_idx = cpu_level * REPLICA_LEVELS + current_replicas
-    action_id = agent.select_action(state_idx, allowed_actions=None)
+    safe_actions = safety_bandit.get_safe_actions(max_failure_rate=0.2)
+    action_id = agent.select_action(state_idx, allowed_actions=safe_actions)
     action_str = get_action_string(action_id)
     return {"action": action_str}
 

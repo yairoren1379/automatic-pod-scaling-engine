@@ -10,9 +10,9 @@ class QLearningAgent:
         self,
         num_states: int,
         num_actions: int,
-        alpha: float = RLConfig.ALPHA,   # מקדם למידה how fast the agent learns
-        gamma: float = RLConfig.GAMMA,  # פקטור הנחה how much future rewards are valued
-        epsilon: float = RLConfig.EPSILON, # הסתברות לחקירה how often to explore
+        alpha: float = RLConfig.ALPHA,
+        gamma: float = RLConfig.GAMMA,
+        epsilon: float = RLConfig.EPSILON,
     ):
         self.num_states = num_states
         self.num_actions = num_actions # [scale up, scale down, nothing, restart]

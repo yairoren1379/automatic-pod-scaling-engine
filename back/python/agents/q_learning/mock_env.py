@@ -53,6 +53,13 @@ class MockKubernetesEnv:
         self.replicas = INITIAL_REPLICAS
         self.step_count = INITIAL_STEP_COUNT
         return self._encode_state()
+    
+    def is_failure(self, action: int) -> bool:
+        if action == ACTION_SCALE_DOWN and self.cpu_level == CPU_LEVELS - OFFSET_TO_LAST_INDEX:
+            return True
+        if action == ACTION_SCALE_DOWN and self.replicas == MIN_LEVEL:
+            return True
+        return False
 
     def step(self, action: int) -> Tuple[int, float, bool, dict]:
 

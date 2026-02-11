@@ -1,8 +1,8 @@
 class RLConfig:
     # Hyperparameters
-    EPSILON = 0.1
-    ALPHA = 0.1
-    GAMMA = 0.99
+    EPSILON = 0.1 # הסתברות לחקירה how often to explore
+    ALPHA = 0.1 # מקדם למידה how fast the agent learns
+    GAMMA = 0.99 # פקטור הנחה how much future rewards are valued
     
     # Rewards & Penalties
     CATASTROPHIC_PENALTY = -100.0

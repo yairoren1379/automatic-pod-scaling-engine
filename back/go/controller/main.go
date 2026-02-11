@@ -33,11 +33,13 @@ type AgentResponse struct {
 	Action string `json:"action"`
 }
 
+// define the structure of the training data sent to Python
 type StateRequest struct {
 	CpuLevel int `json:"cpu_level"`
 	Replicas int `json:"replicas"`
 }
 
+// define the learning data from each step
 type LearnRequest struct {
 	State     StateRequest `json:"state"`
 	Action    int          `json:"action"`
@@ -114,7 +116,6 @@ func simulateLoad(podCount int, baseLoad float64) float64 {
 	if podCount == 0 {
 		return 100.0
 	}
-	// העומס מתחלק בין הפודים
 	usage := baseLoad / float64(podCount)
 	if usage > 100 {
 		return 100.0
@@ -147,7 +148,6 @@ func main() {
 	}
 
 	fmt.Println("Successfully connected to Kubernetes Cluster!")
-	fmt.Println("Starting Control Loop...")
 
 	for {
 		currentTrafficLoad := 0 + (rand.Float64() * 1000)
