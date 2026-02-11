@@ -17,6 +17,10 @@ def train_system():
         while not done:
             safe_actions = safety_bandit.get_safe_actions(max_failure_rate=0.2, min_tries=5)
             
+            if not safe_actions:
+                # [ScaleUp, ScaleDown, None, Restart]
+                safe_actions = [0, 1, 2, 3]
+                
             action = agent.select_action(state, allowed_actions=safe_actions)
             is_catastrophic = env.is_failure(action)
             next_state, reward, done, info = env.step(action)
