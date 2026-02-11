@@ -15,7 +15,7 @@ def train_system():
         total_reward = 0
 
         while not done:
-            safe_actions = safety_bandit.get_safe_actions(max_failure_rate=0.4, min_tries=100)
+            safe_actions = safety_bandit.get_safe_actions(max_failure_rate=0.4, min_tries=1000)
             
             if not safe_actions:
                 # [ScaleUp, ScaleDown, None, Restart]
