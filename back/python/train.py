@@ -9,13 +9,13 @@ def train_system():
 
     print("Start Training Session")
 
-    for episode in range(1000):
+    for episode in range(30000):
         state = env.reset()
         done = False
         total_reward = 0
 
         while not done:
-            safe_actions = safety_bandit.get_safe_actions(max_failure_rate=0.2, min_tries=5)
+            safe_actions = safety_bandit.get_safe_actions(max_failure_rate=0.4, min_tries=100)
             
             if not safe_actions:
                 # [ScaleUp, ScaleDown, None, Restart]
@@ -33,7 +33,7 @@ def train_system():
         if (episode + 1) % 100 == 0:
             print(f"Episode {episode + 1}: Avg Reward: {total_reward:.2f}")
 
-    print("--- Training Finished! ---")
+    print("Training Finished!")
     
     return agent, safety_bandit
 
