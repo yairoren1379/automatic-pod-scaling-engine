@@ -20,14 +20,6 @@ import (
 	"k8s.io/utils/pointer"
 )
 
-const (
-	LowCPU    = 33
-	MediumCPU = 66
-	LowLevel  = 0
-	MedLevel  = 1
-	HighLevel = 2
-)
-
 // define the structure of the cluster state
 // that will be sent to Python
 type ClusterState struct {
@@ -64,20 +56,31 @@ func getCPULevel(usage float64) int {
 }
 
 func calculateReward(cpuLevel int, action int) float64 {
-	// Action IDs: 0: ScaleUp, 1: ScaleDown, 2: None
-	if cpuLevel == HighLevel && action == 0 {
-		return 10.0 // Good: Scaled up during high load
+	if cpuLevel == HighLevel {
+		if action == ScaleUp {
+			return GoodReward
+		}
+		return BadReward
 	}
-	if cpuLevel == LowLevel && action == 1 {
-		return 10.0 // Good: Scaled down during low load
+
+	if cpuLevel == LowLevel {
+		if action == ScaleDown {
+			return GoodReward
+		}
+		if action == ScaleUp {
+			return BadReward
+		}
+		return NeutralReward
 	}
-	if cpuLevel == LowLevel && action == 0 {
-		return -10.0 // Bad: Waste of resources
+
+	if cpuLevel == MedLevel {
+		if action == NoAction {
+			return GoodReward
+		}
+		return BadReward
 	}
-	if cpuLevel == HighLevel && action == 1 {
-		return -10.0 // Bad: Scaling down during high load
-	}
-	return 1.0 // Neutral: Stayed same or handled medium load
+
+	return NeutralReward
 }
 
 func scaleDeployment(clientset *kubernetes.Clientset, deploymentName string, change int32) {
@@ -91,8 +94,11 @@ func scaleDeployment(clientset *kubernetes.Clientset, deploymentName string, cha
 			return getErr
 		}
 
-		// changing the replica count
-		result.Spec.Replicas = pointer.Int32(*result.Spec.Replicas + change)
+		newReplicas := *result.Spec.Replicas + change
+		if newReplicas < 1 {
+			newReplicas = 1
+		}
+		result.Spec.Replicas = pointer.Int32(newReplicas)
 
 		// updates the deployment with the new replica count
 		_, updateErr := deploymentsClient.Update(context.TODO(), result, metav1.UpdateOptions{})
@@ -102,6 +108,18 @@ func scaleDeployment(clientset *kubernetes.Clientset, deploymentName string, cha
 	if retryErr != nil {
 		fmt.Printf("Failed to scale: %v\n", retryErr)
 	}
+}
+
+func simulateLoad(podCount int, baseLoad float64) float64 {
+	if podCount == 0 {
+		return 100.0
+	}
+	// העומס מתחלק בין הפודים
+	usage := baseLoad / float64(podCount)
+	if usage > 100 {
+		return 100.0
+	}
+	return usage
 }
 
 func main() {
@@ -123,7 +141,6 @@ func main() {
 		panic(err.Error())
 	}
 
-	// creates the clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		panic(err.Error())
@@ -133,18 +150,23 @@ func main() {
 	fmt.Println("Starting Control Loop...")
 
 	for {
+		currentTrafficLoad := 0 + (rand.Float64() * 1000)
 		pods, err := clientset.CoreV1().Pods("default").List(apiContext.TODO(), metav1.ListOptions{})
 		if err != nil {
 			fmt.Printf("Error getting pods: %v\n", err)
-			time.Sleep(5 * time.Second)
+			time.Sleep(LoopDelay * time.Second)
 			continue
 		}
 
 		currentPodCount := len(pods.Items)
-
-		simulatedCpu := rand.Float64() * 100
+		if len(pods.Items) == 0 {
+			currentPodCount = 1
+		}
+		simulatedCpu := simulateLoad(currentPodCount, currentTrafficLoad)
+		currentLevel := getCPULevel(simulatedCpu)
 
 		isCrashed := false
+
 		for _, pod := range pods.Items {
 			if pod.Status.Phase == "Failed" || pod.Status.Phase == "Unknown" {
 				isCrashed = true
@@ -157,36 +179,66 @@ func main() {
 			IsCrashed: isCrashed,
 		}
 
-		// in order to contact the go with pyhton
 		jsonData, _ := json.Marshal(state)
-
 		resp, err := http.Post("http://127.0.0.1:8000/decide", "application/json", bytes.NewBuffer(jsonData))
 
 		if err != nil {
 			fmt.Printf("Error contacting Python Brain: %v\n", err)
-		} else {
-			var agentResp AgentResponse                   // to hold the response
-			json.NewDecoder(resp.Body).Decode(&agentResp) // to decode the response
-			resp.Body.Close()                             // to close the response
-
-			fmt.Printf("State: [Pods: %d, CPU: %.2f%%] -> Brain says: %s\n",
-				state.PodCount, state.CpuUsage, agentResp.Action)
-
-			switch agentResp.Action {
-			case "ScaleUp":
-				fmt.Println("Scaling UP")
-				scaleDeployment(clientset, "yair-api-python", 1)
-			case "ScaleDown":
-				if currentPodCount > 1 {
-					fmt.Println("Scaling DOWN")
-					scaleDeployment(clientset, "yair-api-python", -1)
-				}
-			case "Restart":
-				fmt.Println(" Restart requested")
-			case "None":
-				fmt.Println("No action")
-			}
+			time.Sleep(LoopDelay * time.Second)
+			continue
 		}
-		time.Sleep(5 * time.Second)
+		var agentResp AgentResponse
+		json.NewDecoder(resp.Body).Decode(&agentResp)
+		resp.Body.Close()
+
+		fmt.Printf("State: [Pods: %d, CPU: %.2f%%] -> Brain says: %s\n",
+			state.PodCount, state.CpuUsage, agentResp.Action)
+
+		actionID := NoAction
+
+		switch agentResp.Action {
+		case "ScaleUp":
+			actionID = ScaleUp
+			fmt.Println("Scaling UP")
+			scaleDeployment(clientset, "yair-api-python", ReplicaChangeUp)
+		case "ScaleDown":
+			actionID = ScaleDown
+			if currentPodCount > MinPods {
+				fmt.Println("Scaling DOWN")
+				scaleDeployment(clientset, "yair-api-python", ReplicaChangeDown)
+			}
+		case "Restart":
+			actionID = Restart
+			fmt.Println("Restart requested")
+		case "None":
+			actionID = NoAction
+			fmt.Println(" No action")
+		}
+
+		time.Sleep(LoopDelay * time.Second)
+
+		newPodsList, _ := clientset.CoreV1().Pods("default").List(apiContext.TODO(), metav1.ListOptions{})
+		newPodCount := len(newPodsList.Items)
+		if newPodCount == 0 {
+			newPodCount = 1
+		}
+
+		newCpu := rand.Float64() * 100
+		newLevel := getCPULevel(newCpu)
+
+		reward := calculateReward(currentLevel, actionID)
+
+		trainData := LearnRequest{
+			State:     StateRequest{CpuLevel: currentLevel, Replicas: currentPodCount},
+			Action:    actionID,
+			Reward:    reward,
+			NextState: StateRequest{CpuLevel: newLevel, Replicas: newPodCount},
+			Done:      false,
+		}
+
+		trainJson, _ := json.Marshal(trainData)
+		http.Post("http://127.0.0.1:8000/train", "application/json", bytes.NewBuffer(trainJson))
+
+		fmt.Printf("Trained: Reward %.1f sent to brain.\n", reward)
 	}
 }
