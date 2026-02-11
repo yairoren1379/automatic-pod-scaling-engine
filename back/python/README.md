@@ -1,2 +1,1 @@
 # Yair-devops-project
-# This project features an AI-driven autoscaler that optimizes Kubernetes resources using Reinforcement Learning. A Go-based controller monitors cluster metrics (CPU and Pods), while a Python FastAPI backend uses a Q-Learning algorithm to decide the best scaling actions. By balancing performance and cost through a custom Reward Policy and a Safety Bandit layer, the system autonomously learns to maintain system stability while minimizing resource waste.
