@@ -196,16 +196,26 @@ func main() {
 
 		actionID := NoAction
 
+		limitHit := false
+
 		switch agentResp.Action {
 		case "ScaleUp":
 			actionID = ScaleUp
-			fmt.Println("Scaling UP")
-			scaleDeployment(clientset, "yair-api-python", ReplicaChangeUp)
+			if currentPodCount < MaxPods {
+				fmt.Println("Scaling UP")
+				scaleDeployment(clientset, "yair-api-python", ReplicaChangeUp)
+			} else {
+				fmt.Println("Already at max pods, cannot scale up.")
+				limitHit = true
+			}
 		case "ScaleDown":
 			actionID = ScaleDown
 			if currentPodCount > MinPods {
 				fmt.Println("Scaling DOWN")
 				scaleDeployment(clientset, "yair-api-python", ReplicaChangeDown)
+			} else {
+				fmt.Println("Already at min pods, cannot scale down.")
+				limitHit = true
 			}
 		case "Restart":
 			actionID = Restart
@@ -226,8 +236,12 @@ func main() {
 		newCpu := rand.Float64() * 100
 		newLevel := getCPULevel(newCpu)
 
-		reward := calculateReward(currentLevel, actionID)
-
+		var reward float64
+		if limitHit {
+			reward = BadReward
+		} else {
+			reward = calculateReward(currentLevel, actionID)
+		}
 		trainData := LearnRequest{
 			State:     StateRequest{CpuLevel: currentLevel, Replicas: currentPodCount},
 			Action:    actionID,

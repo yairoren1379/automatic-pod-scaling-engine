@@ -21,12 +21,13 @@ const (
 const (
 	GoodReward    = 10.0
 	BadReward     = -10.0
-	NeutralReward = 1.0
+	NeutralReward = 0.0
 )
 
 const (
 	ReplicaChangeUp   = 1
 	ReplicaChangeDown = -1
 	MinPods           = 1
-	LoopDelay         = 5
+	MaxPods           = 15
+	LoopDelay         = 2
 )
