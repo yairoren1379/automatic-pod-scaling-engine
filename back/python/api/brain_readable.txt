@@ -1,0 +1,67 @@
+--- Q-Learning Final Report ---
+Total Episodes: 100000
+-----------------------------
+
+State 0 [CPU Level: 0, Pods: 1]:
+  Action 'ScaleUp': 7.75
+  Action 'ScaleDown': -0.30
+  Action 'None': 0.00
+  Action 'Restart': 0.00
+  >> BEST CHOICE: ScaleUp
+-----------------------------
+State 1 [CPU Level: 0, Pods: 2]:
+  Action 'ScaleUp': 31.74
+  Action 'ScaleDown': 33.54
+  Action 'None': 45.46
+  Action 'Restart': 33.07
+  >> BEST CHOICE: None
+-----------------------------
+State 2 [CPU Level: 0, Pods: 3]:
+  Action 'ScaleUp': 21.18
+  Action 'ScaleDown': 36.39
+  Action 'None': 29.44
+  Action 'Restart': 22.34
+  >> BEST CHOICE: ScaleDown
+-----------------------------
+State 3 [CPU Level: 1, Pods: 1]:
+  Action 'ScaleUp': 36.86
+  Action 'ScaleDown': 26.30
+  Action 'None': 13.25
+  Action 'Restart': 20.59
+  >> BEST CHOICE: ScaleUp
+-----------------------------
+State 4 [CPU Level: 1, Pods: 2]:
+  Action 'ScaleUp': 34.00
+  Action 'ScaleDown': 34.90
+  Action 'None': 42.55
+  Action 'Restart': 33.46
+  >> BEST CHOICE: None
+-----------------------------
+State 5 [CPU Level: 1, Pods: 3]:
+  Action 'ScaleUp': 32.85
+  Action 'ScaleDown': 22.17
+  Action 'None': 14.39
+  Action 'Restart': 18.15
+  >> BEST CHOICE: ScaleUp
+-----------------------------
+State 6 [CPU Level: 2, Pods: 1]:
+  Action 'ScaleUp': 39.58
+  Action 'ScaleDown': 35.47
+  Action 'None': 35.33
+  Action 'Restart': 35.41
+  >> BEST CHOICE: ScaleUp
+-----------------------------
+State 7 [CPU Level: 2, Pods: 2]:
+  Action 'ScaleUp': 33.03
+  Action 'ScaleDown': 35.69
+  Action 'None': 34.13
+  Action 'Restart': 32.28
+  >> BEST CHOICE: ScaleDown
+-----------------------------
+State 8 [CPU Level: 2, Pods: 3]:
+  Action 'ScaleUp': 28.15
+  Action 'ScaleDown': 3.66
+  Action 'None': -0.33
+  Action 'Restart': -0.40
+  >> BEST CHOICE: ScaleUp
+-----------------------------

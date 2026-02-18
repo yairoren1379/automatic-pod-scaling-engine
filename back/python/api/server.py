@@ -4,6 +4,7 @@ from typing import Optional, List
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
+import pickle
 
 # in order to import from agents module
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -30,6 +31,16 @@ agent = QLearningAgent(
 )
 
 safety_bandit = SafetyBandit(arms_count=NUM_ACTIONS)
+
+if os.path.exists("brain_model.pkl"):
+    with open("brain_model.pkl", "rb") as f:
+        data = pickle.load(f)
+        agent.q_table = data["q_table"]
+        safety_bandit.action_counts = data["bandit_counts"]
+        safety_bandit.failure_counts = data["bandit_failures"]
+    print("Loaded pre-trained model successfully!")
+else:
+    print("No pre-trained model found. Starting with fresh agent.")
 
 class ClusterState(BaseModel):
     pod_count: int
