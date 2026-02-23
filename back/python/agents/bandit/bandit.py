@@ -1,27 +1,22 @@
 #finds the best action using epsilon-greedy bandit algorithm
 import random
 from typing import List
+from config_loader import APP_CONFIG
 
-from agents.config import RLConfig
-
-ACTION_COUNT_INIT = 0
-RANDOM_RANGE_START = 0
-OFFSET_TO_LAST_INDEX = 1 # used to not go out of range
-UPDATE_FACTOR_NUMERATOR = 1.0
 
 class EpsilonGreedyBandit:
-    def __init__(self, arms_count: int, epsilon: float = RLConfig.EPSILON):
+    def __init__(self, arms_count: int, epsilon: float = APP_CONFIG["rl_hyperparameters"]["epsilon"]):
         self.arms = arms_count
         self.epsilon = epsilon
 
         # [scale up, scale down, nothing, restart]
-        self.q_values: List[float] = [RLConfig.Q_VALUE_INIT] * arms_count
-        self.action_counts: List[int] = [ACTION_COUNT_INIT] * arms_count
+        self.q_values: List[float] = [APP_CONFIG["rl_hyperparameters"]["q_value_init"]] * arms_count
+        self.action_counts: List[int] = [APP_CONFIG["logic_constants"]["action_count_init"]] * arms_count
 
     # returns the action with the highest Q value if the probability is higher than epsilon, else a random action
     def select_action(self) -> int:
         if random.random() < self.epsilon:
-            return random.randint(RANDOM_RANGE_START, self.arms - OFFSET_TO_LAST_INDEX)
+            return random.randint(APP_CONFIG["logic_constants"]["random_range_start"], APP_CONFIG["logic_constants"]["offset_to_last_index"])
         
         max_q = max(self.q_values)
         candidates = []
@@ -38,7 +33,7 @@ class EpsilonGreedyBandit:
         action_counts = self.action_counts[action]
 
         old_q = self.q_values[action]
-        new_q = old_q + (UPDATE_FACTOR_NUMERATOR / action_counts) * (reward - old_q)
+        new_q = old_q + (APP_CONFIG["logic_constants"]["update_factor_numerator"] / action_counts) * (reward - old_q)
         self.q_values[action] = new_q
 
     def __repr__(self):

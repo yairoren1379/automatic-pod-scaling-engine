@@ -1,7 +1,7 @@
 #learning the best actions using q-learning algorithm
 from typing import List, Optional
 import random
-from agents.config import RLConfig
+from config_loader import APP_CONFIG
 
 
 class QLearningAgent:
@@ -10,9 +10,9 @@ class QLearningAgent:
         self,
         num_states: int,
         num_actions: int,
-        alpha: float = RLConfig.ALPHA,
-        gamma: float = RLConfig.GAMMA,
-        epsilon: float = RLConfig.EPSILON,
+        alpha: float = APP_CONFIG["rl_hyperparameters"]["alpha"],
+        gamma: float = APP_CONFIG["rl_hyperparameters"]["gamma"],
+        epsilon: float = APP_CONFIG["rl_hyperparameters"]["epsilon"],
     ):
         self.num_states = num_states
         self.num_actions = num_actions # [scale up, scale down, nothing, restart]
@@ -25,7 +25,7 @@ class QLearningAgent:
         for state_index in range(num_states):
             row = []
             for action_index in range(num_actions):
-                row.append(RLConfig.Q_VALUE_INIT)
+                row.append(APP_CONFIG["rl_hyperparameters"]["q_value_init"])
             self.q_table.append(row)
             
     def select_action(

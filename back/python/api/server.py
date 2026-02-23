@@ -11,26 +11,21 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 sys.path.append(project_root)
 
-from agents.config import RLConfig
+from config_loader import APP_CONFIG
 from agents.q_learning.q_learning import QLearningAgent
-from agents.q_learning.mock_env import CPU_LEVELS, REPLICA_LEVELS
 from agents.bandit.bandit_safety import SafetyBandit
 
-from config import LOW_CPU, MEDIUM_CPU, LOW_LEVEL, MEDIUM_LEVEL, HIGH_LEVEL
-
 app = FastAPI(title="K8s RL Learning Engine")
-NUM_ACTIONS = 4
-MIN_INDEX = 0
 
-num_states = CPU_LEVELS * REPLICA_LEVELS
+num_states = APP_CONFIG["levels"]["count"] * APP_CONFIG["levels"]["count"]
 # [scale up = 0, scale down = 1, nothing = 2, restart = 3]
 
 agent = QLearningAgent(
     num_states=num_states,
-    num_actions= NUM_ACTIONS
+    num_actions=len(APP_CONFIG["actions"])
 )
 
-safety_bandit = SafetyBandit(arms_count=NUM_ACTIONS)
+safety_bandit = SafetyBandit(arms_count=len(APP_CONFIG["actions"]))
 
 if os.path.exists("brain_model.pkl"):
     with open("brain_model.pkl", "rb") as f:
@@ -48,19 +43,19 @@ class ClusterState(BaseModel):
     is_crashed: bool #are any pods crashed
 
 def get_cpu_level(usage: float) -> int:
-    if usage < LOW_CPU:
-        return LOW_LEVEL
-    elif usage < MEDIUM_CPU:
-        return MEDIUM_LEVEL
+    if usage < APP_CONFIG["cpu_thresholds"]["low"]:
+        return APP_CONFIG["levels"]["low"]
+    elif usage < APP_CONFIG["cpu_thresholds"]["medium"]:
+        return APP_CONFIG["levels"]["medium"]
     else:
-        return HIGH_LEVEL
+        return APP_CONFIG["levels"]["high"]
 
 def get_action_string(action_id: int) -> str:
     mapping = {
-        0: "ScaleUp",
-        1: "ScaleDown",
-        2: "None",
-        3: "Restart"
+        APP_CONFIG["actions"]["scale_up"]: "ScaleUp",
+        APP_CONFIG["actions"]["scale_down"]: "ScaleDown",
+        APP_CONFIG["actions"]["no_action"]: "None",
+        APP_CONFIG["actions"]["restart"]: "Restart"
     }
     return mapping.get(action_id, "None")
 
@@ -83,11 +78,11 @@ def read_root():
 @app.post("/decide")
 def decide(req: ClusterState):
     cpu_level = get_cpu_level(req.cpu_usage)
-    current_replicas = min(req.pod_count, REPLICA_LEVELS - 1)
-    state_idx = cpu_level * REPLICA_LEVELS + current_replicas
+    current_replicas = min(req.pod_count, APP_CONFIG["levels"]["count"] - 1)
+    state_idx = cpu_level * APP_CONFIG["levels"]["count"] + current_replicas
     safe_actions = safety_bandit.get_safe_actions(max_failure_rate=0.2)
     if not safe_actions:
-        safe_actions = [0, 1, 2, 3]
+        safe_actions = list(APP_CONFIG["actions"].values())
     action_id = agent.select_action(state_idx, allowed_actions=safe_actions)
     action_str = get_action_string(action_id)
     return {"action": action_str}
@@ -96,10 +91,10 @@ def decide(req: ClusterState):
 # gets the current state and returns the recommended action by the agent
 def get_action(req: StateRequest):
     # convert the state to an index in base 3
-    state_idx = req.cpu_level * REPLICA_LEVELS + req.replicas
+    state_idx = req.cpu_level * APP_CONFIG["levels"]["count"] + req.replicas
     
     # In case of state that is out of bounds
-    if state_idx >= num_states or state_idx < MIN_INDEX:
+    if state_idx >= num_states or state_idx < APP_CONFIG["logic_constants"]["min_index"]:
         #code 400 - client error
         raise HTTPException(status_code=400, detail="State out of bounds")
 
@@ -119,12 +114,12 @@ step_counter = 0
 def update_agent(req: LearnRequest):
     global step_counter
     
-    current_replicas = min(req.state.replicas, REPLICA_LEVELS - 1)
-    next_replicas = min(req.next_state.replicas, REPLICA_LEVELS - 1)
+    current_replicas = min(req.state.replicas, APP_CONFIG["levels"]["count"] - 1)
+    next_replicas = min(req.next_state.replicas, APP_CONFIG["levels"]["count"] - 1)
     
     # convert states to indexes in base of REPLICA_LEVELS value
-    state_idx = req.state.cpu_level * REPLICA_LEVELS + current_replicas
-    next_state_idx = req.next_state.cpu_level * REPLICA_LEVELS + next_replicas
+    state_idx = req.state.cpu_level * APP_CONFIG["levels"]["count"] + current_replicas
+    next_state_idx = req.next_state.cpu_level * APP_CONFIG["levels"]["count"] + next_replicas
 
     # updates the agent with the new experience
     agent.updateAction(
@@ -144,10 +139,10 @@ def update_agent(req: LearnRequest):
         # הדפסת הערכים של המצב הנוכחי בלבד
         q_values = agent.q_table[state_idx]
         print(f"Knowledge for this state:")
-        print(f"  ScaleUp:   {q_values[0]:.2f}")
-        print(f"  ScaleDown: {q_values[1]:.2f}")
-        print(f"  None:      {q_values[2]:.2f}")
-        print(f"  Restart:   {q_values[3]:.2f}")
+        print(f"  ScaleUp:   {q_values[APP_CONFIG['actions']['scale_up']]:.2f}")
+        print(f"  ScaleDown: {q_values[APP_CONFIG['actions']['scale_down']]:.2f}")
+        print(f"  None:      {q_values[APP_CONFIG['actions']['no_action']]:.2f}")
+        print(f"  Restart:   {q_values[APP_CONFIG['actions']['restart']]:.2f}")
         print("------------------------------------------\n")
 
     return {"status": "updated", "new_q_value": agent.q_table[state_idx][req.action]}

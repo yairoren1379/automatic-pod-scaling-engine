@@ -3,6 +3,7 @@ module controller
 go 1.25.0
 
 require (
+	github.com/go-zookeeper/zk v1.0.4
 	k8s.io/apimachinery v0.35.0
 	k8s.io/client-go v0.35.0
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
