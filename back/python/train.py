@@ -1,12 +1,17 @@
 from agents.q_learning.mock_env import MockKubernetesEnv
 from agents.q_learning.q_learning import QLearningAgent
 from agents.bandit.bandit_safety import SafetyBandit
+from config_loader import APP_CONFIG
 import pickle
 
 def train_system():
+    max_pods = APP_CONFIG["system_limits"]["max_pods"]
+    num_states = APP_CONFIG["levels"]["count"] * (max_pods + 1)
+    num_actions = len(APP_CONFIG["actions"])
+    
     env = MockKubernetesEnv()
-    agent = QLearningAgent(num_states=9, num_actions=4)
-    safety_bandit = SafetyBandit(arms_count=4)
+    agent = QLearningAgent(num_states=num_states, num_actions=num_actions)
+    safety_bandit = SafetyBandit(arms_count=num_actions)
 
     print("Start Training Session")
 
@@ -19,9 +24,7 @@ def train_system():
             safe_actions = safety_bandit.get_safe_actions(max_failure_rate=0.4, min_tries=7000)
             
             if not safe_actions:
-                # [ScaleUp, ScaleDown, None, Restart]
-                safe_actions = [0, 1, 2, 3]
-                
+                safe_actions = [APP_CONFIG["actions"]["scale_up"], APP_CONFIG["actions"]["scale_down"], APP_CONFIG["actions"]["no_action"], APP_CONFIG["actions"]["restart"]]
             action = agent.select_action(state, allowed_actions=safe_actions)
             is_catastrophic = env.is_failure(action)
             next_state, reward, done, info = env.step(action)
