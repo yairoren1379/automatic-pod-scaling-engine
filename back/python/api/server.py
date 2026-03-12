@@ -17,22 +17,19 @@ from agents.bandit.bandit_safety import SafetyBandit
 
 app = FastAPI(title="K8s RL Learning Engine")
 
-num_states = APP_CONFIG["levels"]["count"] * APP_CONFIG["levels"]["count"]
-# [scale up = 0, scale down = 1, nothing = 2, restart = 3]
+MAX_PODS = APP_CONFIG.get("system_limits", {}).get("max_pods", 15)
+num_states = APP_CONFIG["levels"]["count"] * (MAX_PODS + 1)
 
+# [scale up = 0, scale down = 1, nothing = 2, restart = 3]
 agent = QLearningAgent(
     num_states=num_states,
     num_actions=len(APP_CONFIG["actions"])
 )
 
-safety_bandit = SafetyBandit(arms_count=len(APP_CONFIG["actions"]))
-
 if os.path.exists("brain_model.pkl"):
     with open("brain_model.pkl", "rb") as f:
         data = pickle.load(f)
         agent.q_table = data["q_table"]
-        safety_bandit.action_counts = data["bandit_counts"]
-        safety_bandit.failure_counts = data["bandit_failures"]
     print("Loaded pre-trained model successfully!")
 else:
     print("No pre-trained model found. Starting with fresh agent.")
@@ -78,11 +75,9 @@ def read_root():
 @app.post("/decide")
 def decide(req: ClusterState):
     cpu_level = get_cpu_level(req.cpu_usage)
-    current_replicas = min(req.pod_count, APP_CONFIG["levels"]["count"] - 1)
-    state_idx = cpu_level * APP_CONFIG["levels"]["count"] + current_replicas
-    safe_actions = safety_bandit.get_safe_actions(max_failure_rate=0.2)
-    if not safe_actions:
-        safe_actions = list(APP_CONFIG["actions"].values())
+    current_replicas = min(req.pod_count, MAX_PODS)
+    state_idx = cpu_level * (MAX_PODS + 1) + current_replicas
+    safe_actions = list(APP_CONFIG["actions"].values())
     action_id = agent.select_action(state_idx, allowed_actions=safe_actions)
     action_str = get_action_string(action_id)
     return {"action": action_str}
@@ -91,7 +86,7 @@ def decide(req: ClusterState):
 # gets the current state and returns the recommended action by the agent
 def get_action(req: StateRequest):
     # convert the state to an index in base 3
-    state_idx = req.cpu_level * APP_CONFIG["levels"]["count"] + req.replicas
+    state_idx = req.cpu_level * (MAX_PODS + 1) + req.replicas
     
     # In case of state that is out of bounds
     if state_idx >= num_states or state_idx < APP_CONFIG["logic_constants"]["min_index"]:
@@ -114,12 +109,12 @@ step_counter = 0
 def update_agent(req: LearnRequest):
     global step_counter
     
-    current_replicas = min(req.state.replicas, APP_CONFIG["levels"]["count"] - 1)
-    next_replicas = min(req.next_state.replicas, APP_CONFIG["levels"]["count"] - 1)
+    current_replicas = min(req.state.replicas, MAX_PODS)
+    next_replicas = min(req.next_state.replicas, MAX_PODS)
     
     # convert states to indexes in base of REPLICA_LEVELS value
-    state_idx = req.state.cpu_level * APP_CONFIG["levels"]["count"] + current_replicas
-    next_state_idx = req.next_state.cpu_level * APP_CONFIG["levels"]["count"] + next_replicas
+    state_idx = req.state.cpu_level * (MAX_PODS + 1) + current_replicas
+    next_state_idx = req.next_state.cpu_level * (MAX_PODS + 1) + next_replicas
 
     # updates the agent with the new experience
     agent.updateAction(

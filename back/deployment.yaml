@@ -16,3 +16,8 @@ spec:
       - name: python-container
         image: python:3.9-slim
         command: ["/bin/sh", "-c", "sleep 3600"]
+        resources:
+          requests:
+            cpu: "100m"
+          limits:
+            cpu: "200m"

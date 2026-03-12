@@ -7,17 +7,18 @@ import (
 	"encoding/json"
 	"flag" // to handle command-line flags
 	"fmt"  // to print output
-	"math/rand"
 	"net/http"
+	"os"
 	"path/filepath" // to handle file paths
 	"time"
 
-	"github.com/go-zookeeper/zk"                  // library for zookeeper
+	"github.com/go-zookeeper/zk"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1" // to work with Kubernetes object metadata
 	"k8s.io/client-go/kubernetes"                 // to change Kubernetes resources
 	"k8s.io/client-go/tools/clientcmd"            // to create the secure connection to the cluster
 	"k8s.io/client-go/util/homedir"               // to find the home directory
 	"k8s.io/client-go/util/retry"
+	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 	"k8s.io/utils/pointer"
 )
 
@@ -53,12 +54,19 @@ type LevelsConfig struct {
 	High   int `json:"high"`
 }
 
+type LogicConstants struct {
+	OffsetToLastIndex int `json:"offset_to_last_index"`
+	MinLevel          int `json:"min_level"`
+	InitialReplicas   int `json:"initial_replicas"`
+}
+
 type AppConfig struct {
-	SystemLimits  SystemLimits  `json:"system_limits"`
-	CpuThresholds CpuThresholds `json:"cpu_thresholds"`
-	Rewards       Rewards       `json:"rewards"`
-	Actions       ActionsConfig `json:"actions"`
-	Levels        LevelsConfig  `json:"levels"`
+	SystemLimits   SystemLimits   `json:"system_limits"`
+	CpuThresholds  CpuThresholds  `json:"cpu_thresholds"`
+	Rewards        Rewards        `json:"rewards"`
+	Actions        ActionsConfig  `json:"actions"`
+	Levels         LevelsConfig   `json:"levels"`
+	LogicConstants LogicConstants `json:"logic_constants"`
 }
 
 var config AppConfig
@@ -91,8 +99,8 @@ type LearnRequest struct {
 	Done      bool         `json:"done"`
 }
 
-func load_zookeeper_config() error {
-	c, _, err := zk.Connect([]string{"127.0.0.1:2181"}, time.Second*5)
+func load_zookeeper_config(zkHost string) error {
+	c, _, err := zk.Connect([]string{zkHost}, time.Second*5)
 	if err != nil {
 		return err
 	}
@@ -156,8 +164,8 @@ func calculateReward(cpuLevel int, action int) float64 {
 	return config.Rewards.Neutral
 }
 
-func scaleDeployment(clientset *kubernetes.Clientset, deploymentName string, change int32) {
-	deploymentsClient := clientset.AppsV1().Deployments("default")
+func scaleDeployment(clientset *kubernetes.Clientset, namespace string, deploymentName string, change int32) {
+	deploymentsClient := clientset.AppsV1().Deployments(namespace)
 
 	// gets the current deployment from the cluster
 	// and updates the replica count
@@ -167,7 +175,7 @@ func scaleDeployment(clientset *kubernetes.Clientset, deploymentName string, cha
 			return getErr
 		}
 
-		currentReplicas := int32(config.SystemLimits.MinPods)
+		currentReplicas := int32(config.LogicConstants.InitialReplicas)
 		if result.Spec.Replicas != nil {
 			currentReplicas = *result.Spec.Replicas
 		}
@@ -188,19 +196,43 @@ func scaleDeployment(clientset *kubernetes.Clientset, deploymentName string, cha
 	}
 }
 
-func simulateLoad(podCount int, baseLoad float64) float64 {
-	if podCount == config.SystemLimits.MinPods - 1 {
-		return 100.0
+func getRealCPULoad(metricsClient *metricsv.Clientset, namespace string, labelSelector string, podCount int) float64 {
+	if podCount == config.LogicConstants.MinLevel {
+		return float64(config.LogicConstants.MinLevel)
 	}
-	usage := baseLoad / float64(podCount)
-	if usage > 100 {
-		return 100.0
+
+	podMetricsList, err := metricsClient.MetricsV1beta1().PodMetricses(namespace).List(apiContext.TODO(), metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+	if err != nil {
+		fmt.Printf("Warning: Failed to get metrics: %v\n", err)
+		return float64(config.LogicConstants.MinLevel)
 	}
-	return usage
+
+	var totalCpuMilli int64 = int64(config.LogicConstants.MinLevel)
+	for _, podMetric := range podMetricsList.Items {
+		for _, container := range podMetric.Containers {
+			totalCpuMilli += container.Usage.Cpu().MilliValue()
+		}
+	}
+
+	return float64(totalCpuMilli) / float64(podCount)
 }
 
+func getEnv(key, fallback string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return fallback
+}
 func main() {
-	err := load_zookeeper_config()
+	zkHost := getEnv("ZK_HOST", "127.0.0.1:2181")
+	brainURL := getEnv("BRAIN_URL", "http://127.0.0.1:8000")
+	targetNamespace := getEnv("TARGET_NAMESPACE", "default")
+	targetDeployment := getEnv("TARGET_DEPLOYMENT", "yair-api-python")
+	targetLabel := getEnv("TARGET_LABEL", "app=yair-api")
+
+	err := load_zookeeper_config(zkHost)
 	if err != nil {
 		fmt.Printf("Error loading config from Zookeeper: %v\n", err)
 		return
@@ -230,12 +262,16 @@ func main() {
 		panic(err.Error())
 	}
 
-	fmt.Println("Successfully connected to Kubernetes Cluster!")
+	metricsClient, err := metricsv.NewForConfig(configK8s)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	fmt.Printf("Successfully connected to K8s! Targeting: %s/%s\n", targetNamespace, targetDeployment)
 
 	for {
-		currentTrafficLoad := rand.Float64() * 1000
-		pods, err := clientset.CoreV1().Pods("default").List(apiContext.TODO(), metav1.ListOptions{
-			LabelSelector: "app=yair-api-python",
+		pods, err := clientset.CoreV1().Pods(targetNamespace).List(apiContext.TODO(), metav1.ListOptions{
+			LabelSelector: targetLabel,
 		})
 		if err != nil {
 			fmt.Printf("Error getting pods: %v\n", err)
@@ -247,11 +283,10 @@ func main() {
 		if currentPodCount == config.SystemLimits.MinPods-1 {
 			currentPodCount = config.SystemLimits.MinPods
 		}
-		simulatedCpu := simulateLoad(currentPodCount, currentTrafficLoad)
-		currentLevel := getCPULevel(simulatedCpu)
+		realCpu := getRealCPULoad(metricsClient, targetNamespace, targetLabel, currentPodCount)
+		currentLevel := getCPULevel(realCpu)
 
 		isCrashed := false
-
 		for _, pod := range pods.Items {
 			if pod.Status.Phase == "Failed" || pod.Status.Phase == "Unknown" {
 				isCrashed = true
@@ -260,12 +295,12 @@ func main() {
 
 		state := ClusterState{
 			PodCount:  currentPodCount,
-			CpuUsage:  simulatedCpu,
+			CpuUsage:  realCpu,
 			IsCrashed: isCrashed,
 		}
 
 		jsonData, _ := json.Marshal(state)
-		resp, err := http.Post("http://127.0.0.1:8000/decide", "application/json", bytes.NewBuffer(jsonData))
+		resp, err := http.Post(brainURL+"/decide", "application/json", bytes.NewBuffer(jsonData))
 
 		if err != nil {
 			fmt.Printf("Error contacting Python Brain: %v\n", err)
@@ -280,7 +315,6 @@ func main() {
 			state.PodCount, state.CpuUsage, agentResp.Action)
 
 		actionID := config.Actions.NoAction
-
 		limitHit := false
 
 		switch agentResp.Action {
@@ -288,7 +322,7 @@ func main() {
 			actionID = config.Actions.ScaleUp
 			if currentPodCount < config.SystemLimits.MaxPods {
 				fmt.Println("Scaling UP")
-				scaleDeployment(clientset, "yair-api-python", int32(config.SystemLimits.ReplicaChangeUp))
+				scaleDeployment(clientset, targetNamespace, targetDeployment, int32(config.SystemLimits.ReplicaChangeUp))
 			} else {
 				fmt.Println("Already at max pods, cannot scale up.")
 				limitHit = true
@@ -297,7 +331,7 @@ func main() {
 			actionID = config.Actions.ScaleDown
 			if currentPodCount > config.SystemLimits.MinPods {
 				fmt.Println("Scaling DOWN")
-				scaleDeployment(clientset, "yair-api-python", int32(config.SystemLimits.ReplicaChangeDown))
+				scaleDeployment(clientset, targetNamespace, targetDeployment, int32(config.SystemLimits.ReplicaChangeDown))
 			} else {
 				fmt.Println("Already at min pods, cannot scale down.")
 				limitHit = true
@@ -312,16 +346,16 @@ func main() {
 
 		time.Sleep(time.Duration(config.SystemLimits.LoopDelaySeconds) * time.Second)
 
-		newPodsList, _ := clientset.CoreV1().Pods("default").List(apiContext.TODO(), metav1.ListOptions{
-			LabelSelector: "app=yair-api-python",
+		newPodsList, _ := clientset.CoreV1().Pods(targetNamespace).List(apiContext.TODO(), metav1.ListOptions{
+			LabelSelector: targetLabel,
 		})
 		newPodCount := len(newPodsList.Items)
 		if newPodCount == config.SystemLimits.MinPods-1 {
 			newPodCount = config.SystemLimits.MinPods
 		}
 
-		newCpu := simulateLoad(newPodCount, currentTrafficLoad)
-		newLevel := getCPULevel(newCpu)
+		newRealCpu := getRealCPULoad(metricsClient, targetNamespace, targetLabel, newPodCount)
+		newLevel := getCPULevel(newRealCpu)
 
 		var reward float64
 		if limitHit {
@@ -338,8 +372,7 @@ func main() {
 		}
 
 		trainJson, _ := json.Marshal(trainData)
-		http.Post("http://127.0.0.1:8000/train", "application/json", bytes.NewBuffer(trainJson))
-
+		http.Post(brainURL+"/train", "application/json", bytes.NewBuffer(trainJson))
 		fmt.Printf("Trained: Reward %.1f sent to brain.\n", reward)
 	}
 }
