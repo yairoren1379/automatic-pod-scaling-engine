@@ -21,11 +21,22 @@ def train_system():
         total_reward = 0
 
         while not done:
-            safe_actions = safety_bandit.get_safe_actions(max_failure_rate=0.4, min_tries=7000)
+            bandit_safe_actions = safety_bandit.get_safe_actions(max_failure_rate=0.4, min_tries=7000)
+            if not bandit_safe_actions:
+                bandit_safe_actions = [APP_CONFIG["actions"]["scale_up"], APP_CONFIG["actions"]["scale_down"], APP_CONFIG["actions"]["no_action"], APP_CONFIG["actions"]["restart"]]
+                
+            current_pods = state % (max_pods + 1)
+            final_safe_actions = bandit_safe_actions.copy()
             
-            if not safe_actions:
-                safe_actions = [APP_CONFIG["actions"]["scale_up"], APP_CONFIG["actions"]["scale_down"], APP_CONFIG["actions"]["no_action"], APP_CONFIG["actions"]["restart"]]
-            action = agent.select_action(state, allowed_actions=safe_actions)
+            if current_pods <= 1:
+                if APP_CONFIG["actions"]["scale_down"] in final_safe_actions: final_safe_actions.remove(APP_CONFIG["actions"]["scale_down"])
+                if APP_CONFIG["actions"]["restart"] in final_safe_actions: final_safe_actions.remove(APP_CONFIG["actions"]["restart"])
+            elif current_pods >= max_pods:
+                if APP_CONFIG["actions"]["scale_up"] in final_safe_actions: final_safe_actions.remove(APP_CONFIG["actions"]["scale_up"])
+            elif not final_safe_actions:
+                final_safe_actions = [APP_CONFIG["actions"]["no_action"]]
+                
+            action = agent.select_action(state, allowed_actions=final_safe_actions)
             is_catastrophic = env.is_failure(action)
             next_state, reward, done, info = env.step(action)
             safety_bandit.update_from_outcome(action, is_catastrophic)
@@ -47,17 +58,16 @@ def train_system():
         }, f)
     
     print("Model saved to brain_model.pkl")
-
-    action_names = {0: "ScaleUp", 1: "ScaleDown", 2: "None", 3: "Restart"}
     
+    action_names = {v: k for k, v in APP_CONFIG["actions"].items()}
     with open("api/brain_readable.txt", "w") as f:
         f.write("--- Q-Learning Final Report ---\n")
         f.write(f"Total Episodes: 100000\n")
         f.write("-----------------------------\n\n")
         
         for state_idx, q_values in enumerate(agent.q_table):
-            cpu_level = state_idx // 3
-            replicas = (state_idx % 3) + 1
+            cpu_level = state_idx // (max_pods + 1)
+            replicas = state_idx % (max_pods + 1)
             
             f.write(f"State {state_idx} [CPU Level: {cpu_level}, Pods: {replicas}]:\n")
             
@@ -66,7 +76,7 @@ def train_system():
                 f.write(f"  Action '{action_name}': {score:.2f}\n")
             
             best_action_idx = q_values.index(max(q_values))
-            best_action_name = action_names[best_action_idx]
+            best_action_name = action_names.get(best_action_idx, "Unknown")
             f.write(f"  >> BEST CHOICE: {best_action_name}\n")
             f.write("-----------------------------\n")
             
