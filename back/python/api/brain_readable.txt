@@ -1,0 +1,340 @@
+--- Q-Learning Final Report ---
+Total Episodes: 100000
+-----------------------------
+
+State 0 [CPU Level: 0, Pods: 0]:
+  Action 'scale_up': 0.00
+  Action 'scale_down': 0.00
+  Action 'no_action': 0.00
+  Action 'restart': 0.00
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 1 [CPU Level: 0, Pods: 1]:
+  Action 'scale_up': 6.48
+  Action 'scale_down': 0.00
+  Action 'no_action': 42.44
+  Action 'restart': 0.00
+  >> BEST CHOICE: no_action
+-----------------------------
+State 2 [CPU Level: 0, Pods: 2]:
+  Action 'scale_up': -0.03
+  Action 'scale_down': 1.64
+  Action 'no_action': -0.02
+  Action 'restart': -1.41
+  >> BEST CHOICE: scale_down
+-----------------------------
+State 3 [CPU Level: 0, Pods: 3]:
+  Action 'scale_up': -1.56
+  Action 'scale_down': -2.19
+  Action 'no_action': -1.70
+  Action 'restart': -3.05
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 4 [CPU Level: 0, Pods: 4]:
+  Action 'scale_up': -2.54
+  Action 'scale_down': -3.57
+  Action 'no_action': -2.46
+  Action 'restart': -2.80
+  >> BEST CHOICE: no_action
+-----------------------------
+State 5 [CPU Level: 0, Pods: 5]:
+  Action 'scale_up': -3.12
+  Action 'scale_down': -3.67
+  Action 'no_action': -2.99
+  Action 'restart': -3.91
+  >> BEST CHOICE: no_action
+-----------------------------
+State 6 [CPU Level: 0, Pods: 6]:
+  Action 'scale_up': -3.49
+  Action 'scale_down': -3.82
+  Action 'no_action': -3.58
+  Action 'restart': -4.24
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 7 [CPU Level: 0, Pods: 7]:
+  Action 'scale_up': -3.95
+  Action 'scale_down': -4.35
+  Action 'no_action': -3.95
+  Action 'restart': -4.21
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 8 [CPU Level: 0, Pods: 8]:
+  Action 'scale_up': -4.18
+  Action 'scale_down': -5.00
+  Action 'no_action': -4.19
+  Action 'restart': -4.68
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 9 [CPU Level: 0, Pods: 9]:
+  Action 'scale_up': -4.40
+  Action 'scale_down': -4.38
+  Action 'no_action': -4.41
+  Action 'restart': -5.26
+  >> BEST CHOICE: scale_down
+-----------------------------
+State 10 [CPU Level: 0, Pods: 10]:
+  Action 'scale_up': -4.67
+  Action 'scale_down': -5.88
+  Action 'no_action': -4.65
+  Action 'restart': -5.05
+  >> BEST CHOICE: no_action
+-----------------------------
+State 11 [CPU Level: 0, Pods: 11]:
+  Action 'scale_up': -5.08
+  Action 'scale_down': -5.24
+  Action 'no_action': -4.86
+  Action 'restart': -6.20
+  >> BEST CHOICE: no_action
+-----------------------------
+State 12 [CPU Level: 0, Pods: 12]:
+  Action 'scale_up': -5.81
+  Action 'scale_down': -6.02
+  Action 'no_action': -5.20
+  Action 'restart': -5.49
+  >> BEST CHOICE: no_action
+-----------------------------
+State 13 [CPU Level: 0, Pods: 13]:
+  Action 'scale_up': -3.98
+  Action 'scale_down': -4.44
+  Action 'no_action': -4.21
+  Action 'restart': -4.34
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 14 [CPU Level: 0, Pods: 14]:
+  Action 'scale_up': -2.00
+  Action 'scale_down': -3.09
+  Action 'no_action': -2.83
+  Action 'restart': -2.87
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 15 [CPU Level: 0, Pods: 15]:
+  Action 'scale_up': 0.00
+  Action 'scale_down': -2.66
+  Action 'no_action': -1.36
+  Action 'restart': -2.16
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 16 [CPU Level: 1, Pods: 0]:
+  Action 'scale_up': 0.00
+  Action 'scale_down': 0.00
+  Action 'no_action': 0.00
+  Action 'restart': 0.00
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 17 [CPU Level: 1, Pods: 1]:
+  Action 'scale_up': 2.72
+  Action 'scale_down': 0.00
+  Action 'no_action': 27.39
+  Action 'restart': 0.00
+  >> BEST CHOICE: no_action
+-----------------------------
+State 18 [CPU Level: 1, Pods: 2]:
+  Action 'scale_up': -1.87
+  Action 'scale_down': -2.00
+  Action 'no_action': -2.19
+  Action 'restart': -2.93
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 19 [CPU Level: 1, Pods: 3]:
+  Action 'scale_up': -2.25
+  Action 'scale_down': -3.25
+  Action 'no_action': -2.99
+  Action 'restart': -4.16
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 20 [CPU Level: 1, Pods: 4]:
+  Action 'scale_up': -3.07
+  Action 'scale_down': -3.75
+  Action 'no_action': -3.69
+  Action 'restart': -3.66
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 21 [CPU Level: 1, Pods: 5]:
+  Action 'scale_up': -3.42
+  Action 'scale_down': -3.93
+  Action 'no_action': -3.77
+  Action 'restart': -4.15
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 22 [CPU Level: 1, Pods: 6]:
+  Action 'scale_up': -3.84
+  Action 'scale_down': -4.72
+  Action 'no_action': -4.56
+  Action 'restart': -4.98
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 23 [CPU Level: 1, Pods: 7]:
+  Action 'scale_up': -4.11
+  Action 'scale_down': -4.54
+  Action 'no_action': -5.19
+  Action 'restart': -4.92
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 24 [CPU Level: 1, Pods: 8]:
+  Action 'scale_up': -4.35
+  Action 'scale_down': -4.72
+  Action 'no_action': -5.02
+  Action 'restart': -5.29
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 25 [CPU Level: 1, Pods: 9]:
+  Action 'scale_up': -4.70
+  Action 'scale_down': -4.67
+  Action 'no_action': -4.75
+  Action 'restart': -5.87
+  >> BEST CHOICE: scale_down
+-----------------------------
+State 26 [CPU Level: 1, Pods: 10]:
+  Action 'scale_up': -4.95
+  Action 'scale_down': -5.78
+  Action 'no_action': -5.85
+  Action 'restart': -6.50
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 27 [CPU Level: 1, Pods: 11]:
+  Action 'scale_up': -5.13
+  Action 'scale_down': -5.28
+  Action 'no_action': -6.42
+  Action 'restart': -5.80
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 28 [CPU Level: 1, Pods: 12]:
+  Action 'scale_up': -4.14
+  Action 'scale_down': -7.01
+  Action 'no_action': -6.19
+  Action 'restart': -6.73
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 29 [CPU Level: 1, Pods: 13]:
+  Action 'scale_up': -2.67
+  Action 'scale_down': -4.41
+  Action 'no_action': -4.36
+  Action 'restart': -4.83
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 30 [CPU Level: 1, Pods: 14]:
+  Action 'scale_up': -1.37
+  Action 'scale_down': -4.29
+  Action 'no_action': -3.65
+  Action 'restart': -2.31
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 31 [CPU Level: 1, Pods: 15]:
+  Action 'scale_up': 0.00
+  Action 'scale_down': -3.05
+  Action 'no_action': -1.94
+  Action 'restart': -3.28
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 32 [CPU Level: 2, Pods: 0]:
+  Action 'scale_up': 0.00
+  Action 'scale_down': 0.00
+  Action 'no_action': 0.00
+  Action 'restart': 0.00
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 33 [CPU Level: 2, Pods: 1]:
+  Action 'scale_up': -0.15
+  Action 'scale_down': 0.00
+  Action 'no_action': 33.28
+  Action 'restart': 0.00
+  >> BEST CHOICE: no_action
+-----------------------------
+State 34 [CPU Level: 2, Pods: 2]:
+  Action 'scale_up': -1.58
+  Action 'scale_down': -1.97
+  Action 'no_action': -1.80
+  Action 'restart': -2.04
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 35 [CPU Level: 2, Pods: 3]:
+  Action 'scale_up': -2.17
+  Action 'scale_down': -2.82
+  Action 'no_action': -2.70
+  Action 'restart': -2.40
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 36 [CPU Level: 2, Pods: 4]:
+  Action 'scale_up': -2.73
+  Action 'scale_down': -3.16
+  Action 'no_action': -3.51
+  Action 'restart': -3.41
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 37 [CPU Level: 2, Pods: 5]:
+  Action 'scale_up': -3.35
+  Action 'scale_down': -3.61
+  Action 'no_action': -3.58
+  Action 'restart': -3.23
+  >> BEST CHOICE: restart
+-----------------------------
+State 38 [CPU Level: 2, Pods: 6]:
+  Action 'scale_up': -3.64
+  Action 'scale_down': -3.83
+  Action 'no_action': -4.09
+  Action 'restart': -5.41
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 39 [CPU Level: 2, Pods: 7]:
+  Action 'scale_up': -3.90
+  Action 'scale_down': -4.18
+  Action 'no_action': -4.44
+  Action 'restart': -4.78
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 40 [CPU Level: 2, Pods: 8]:
+  Action 'scale_up': -4.07
+  Action 'scale_down': -4.13
+  Action 'no_action': -4.48
+  Action 'restart': -5.01
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 41 [CPU Level: 2, Pods: 9]:
+  Action 'scale_up': -4.50
+  Action 'scale_down': -4.61
+  Action 'no_action': -4.45
+  Action 'restart': -4.44
+  >> BEST CHOICE: restart
+-----------------------------
+State 42 [CPU Level: 2, Pods: 10]:
+  Action 'scale_up': -4.59
+  Action 'scale_down': -4.55
+  Action 'no_action': -6.06
+  Action 'restart': -5.55
+  >> BEST CHOICE: scale_down
+-----------------------------
+State 43 [CPU Level: 2, Pods: 11]:
+  Action 'scale_up': -4.83
+  Action 'scale_down': -5.95
+  Action 'no_action': -5.28
+  Action 'restart': -5.96
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 44 [CPU Level: 2, Pods: 12]:
+  Action 'scale_up': -4.85
+  Action 'scale_down': -5.61
+  Action 'no_action': -5.28
+  Action 'restart': -5.96
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 45 [CPU Level: 2, Pods: 13]:
+  Action 'scale_up': -1.72
+  Action 'scale_down': -4.35
+  Action 'no_action': -2.69
+  Action 'restart': -3.70
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 46 [CPU Level: 2, Pods: 14]:
+  Action 'scale_up': -0.79
+  Action 'scale_down': -3.16
+  Action 'no_action': -1.85
+  Action 'restart': -3.65
+  >> BEST CHOICE: scale_up
+-----------------------------
+State 47 [CPU Level: 2, Pods: 15]:
+  Action 'scale_up': 0.00
+  Action 'scale_down': -3.79
+  Action 'no_action': -1.87
+  Action 'restart': -4.00
+  >> BEST CHOICE: scale_up
+-----------------------------

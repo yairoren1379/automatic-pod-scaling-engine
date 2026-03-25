@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: yair-api-python
 spec:
-  replicas: 1
+  replicas: 15
   selector:
     matchLabels:
       app: yair-api
@@ -14,7 +14,8 @@ spec:
     spec:
       containers:
       - name: python-container
-        image: python:3.9-slim
+        image: debian:buster-slim
+        # החזרנו אותם לישון! עומס ה-CPU יצנח ל-0
         command: ["/bin/sh", "-c", "sleep 3600"]
         resources:
           requests:

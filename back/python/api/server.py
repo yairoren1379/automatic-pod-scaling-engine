@@ -2,6 +2,7 @@ import sys
 import os
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 import pickle
@@ -16,6 +17,23 @@ from agents.q_learning.q_learning import QLearningAgent
 from agents.bandit.bandit_safety import SafetyBandit
 
 app = FastAPI(title="K8s RL Learning Engine")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+last_system_status = {
+    "pods": 0, "cpu_usage": 0.0, "cpu_level": 0,
+    "action": "Waiting...", "reward": 0.0, "q_values": [0,0,0,0]
+}
+
+@app.get("/status")
+def get_dashboard_status():
+    return last_system_status
 
 MAX_PODS = APP_CONFIG.get("system_limits", {}).get("max_pods", 15)
 num_states = APP_CONFIG["levels"]["count"] * (MAX_PODS + 1)
@@ -80,6 +98,13 @@ def decide(req: ClusterState):
     safe_actions = list(APP_CONFIG["actions"].values())
     action_id = agent.select_action(state_idx, allowed_actions=safe_actions)
     action_str = get_action_string(action_id)
+    
+    last_system_status["pods"] = current_replicas
+    last_system_status["cpu_usage"] = req.cpu_usage
+    last_system_status["cpu_level"] = cpu_level
+    last_system_status["action"] = action_str
+    last_system_status["q_values"] = agent.q_table[state_idx]
+    
     return {"action": action_str}
 
 @app.post("/predict")
@@ -125,13 +150,14 @@ def update_agent(req: LearnRequest):
         done=req.done
     )
     
+    last_system_status["reward"] = req.reward
+    
     step_counter += 1
     if step_counter % 2 == 0: # print every 2 steps
         print(f"\n--- Q-Table Snapshot (Step {step_counter}) ---")
         print(f"Current State [CPU:{req.state.cpu_level}, Pods:{current_replicas}] Index: {state_idx}")
         print(f"Action Taken: {get_action_string(req.action)} | Reward: {req.reward}")
         
-        # הדפסת הערכים של המצב הנוכחי בלבד
         q_values = agent.q_table[state_idx]
         print(f"Knowledge for this state:")
         print(f"  ScaleUp:   {q_values[APP_CONFIG['actions']['scale_up']]:.2f}")
@@ -141,6 +167,5 @@ def update_agent(req: LearnRequest):
         print("------------------------------------------\n")
 
     return {"status": "updated", "new_q_value": agent.q_table[state_idx][req.action]}
-
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
