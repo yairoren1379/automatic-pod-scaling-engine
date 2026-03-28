@@ -13,7 +13,7 @@ def setup_zookeeper_config():
             "max_pods": 15,
             "replica_change_up": 1,
             "replica_change_down": -1,
-            "loop_delay_seconds": 2
+            "loop_delay_seconds": 30
         },
         
         "cpu_thresholds": {

@@ -15,8 +15,7 @@ spec:
       containers:
       - name: python-container
         image: debian:buster-slim
-        # החזרנו אותם לישון! עומס ה-CPU יצנח ל-0
-        command: ["/bin/sh", "-c", "sleep 3600"]
+        command: ["/bin/sh", "-c", "while true; do true; done"]
         resources:
           requests:
             cpu: "100m"
