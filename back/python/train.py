@@ -44,7 +44,8 @@ def train_system():
             
             state = next_state
             total_reward += reward
-
+        agent.decay_epsilon()
+        
         if (episode + 1) % 100 == 0:
             print(f"Episode {episode + 1}: Avg Reward: {total_reward:.2f}")
 

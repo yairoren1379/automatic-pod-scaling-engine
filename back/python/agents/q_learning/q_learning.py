@@ -19,6 +19,8 @@ class QLearningAgent:
         self.alpha = alpha
         self.gamma = gamma
         self.epsilon = epsilon
+        self.epsilon_min = APP_CONFIG["rl_hyperparameters"]["epsilon_min"]
+        self.epsilon_decay = APP_CONFIG["rl_hyperparameters"]["epsilon_decay"]
 
         # every cell represents the Q value for a (state, action) pair
         self.q_table = []
@@ -27,6 +29,10 @@ class QLearningAgent:
             for action_index in range(num_actions):
                 row.append(APP_CONFIG["rl_hyperparameters"]["q_value_init"])
             self.q_table.append(row)
+            
+    def decay_epsilon(self):
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
             
     def select_action(
         self,
