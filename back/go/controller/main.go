@@ -242,7 +242,6 @@ func main() {
 	// initialize configuration and clientset to interact with Kubernetes API
 	// located in user's home directory: home/.kube/config
 
-	// gets the kubeconfig file path in order to login to the cluster
 	var kubeconfig *string
 	if home := homedir.HomeDir(); home != "" {
 		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
@@ -251,7 +250,6 @@ func main() {
 	}
 	flag.Parse()
 
-	// build the configuration from the kubeconfig file
 	configK8s, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
 	if err != nil {
 		panic(err.Error())
@@ -342,6 +340,10 @@ func main() {
 		case "None", "NoAction":
 			actionID = config.Actions.NoAction
 			fmt.Println(" No action")
+		case "Resting":
+			fmt.Println("System is Resting. Go Controller pausing for 30 seconds...")
+			time.Sleep(30 * time.Second)
+			continue
 		}
 
 		time.Sleep(time.Duration(config.SystemLimits.LoopDelaySeconds) * time.Second)

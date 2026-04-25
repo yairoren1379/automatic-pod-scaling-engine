@@ -3,9 +3,6 @@ import React, { useState, useEffect, useRef } from 'react';
 const API_URL = "http://127.0.0.1:8000";
 const MAX_PODS = 15;
 
-// ==========================================
-// Component 1: The Logs Page (/logs)
-// ==========================================
 function LogsPage() {
   const [logs, setLogs] = useState([]);
   const logEndRef = useRef(null);
@@ -22,7 +19,6 @@ function LogsPage() {
     return () => clearInterval(intervalId);
   }, []);
 
-  // גלילה אוטומטית למטה
   useEffect(() => {
     if (logEndRef.current) logEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
@@ -45,9 +41,6 @@ function LogsPage() {
   );
 }
 
-// ==========================================
-// Component 2: The Main Dashboard (/)
-// ==========================================
 function Dashboard() {
   const [status, setStatus] = useState({
     pods: 0, cpu_usage: 0.0, cpu_level: 0, action: "Waiting...", reward: 0.0, q_values: [0, 0, 0, 0]
@@ -90,7 +83,7 @@ function Dashboard() {
     <div className="bg-gray-900 text-gray-100 font-sans min-h-screen p-8">
       <div className="max-w-6xl mx-auto">
 
-        {/* Header */}
+        { }
         <div className="flex items-center justify-between mb-8 border-b border-gray-700 pb-4 gap-4">
           <div className="flex items-center space-x-4">
             <i className="fa-solid fa-brain text-4xl text-blue-500"></i>
@@ -99,7 +92,7 @@ function Dashboard() {
             </h1>
           </div>
           <div className="flex items-center gap-4">
-            {/* כפתור פתיחת הלוגים בדף חדש */}
+            { }
             <button
               onClick={() => window.open('/logs', '_blank')}
               className="bg-gray-700 hover:bg-gray-600 text-white py-2 px-5 rounded-lg text-sm flex items-center gap-2 cursor-pointer transition-colors border border-gray-600">
@@ -110,7 +103,7 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Control Panel */}
+        { }
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 bg-gray-800 p-4 rounded-xl border border-gray-700">
           <button onClick={() => handleControlAction('start-load')} className="bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(220,38,38,0.4)] transition-all flex justify-center items-center gap-2 cursor-pointer">
             <i className="fa-solid fa-fire"></i> High Load
@@ -126,7 +119,7 @@ function Dashboard() {
           </button>
         </div>
 
-        {/* Main Stats Grid */}
+        { }
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-[0_0_15px_rgba(59,130,246,0.3)]">
             <div className="text-gray-400 text-sm font-semibold uppercase mb-2"><i className="fa-solid fa-server mr-2"></i> Active Pods</div>
@@ -153,7 +146,7 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Q-Table */}
+        { }
         <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-[0_0_15px_rgba(59,130,246,0.3)]">
           <h2 className="text-xl font-bold mb-6 text-gray-200"><i className="fa-solid fa-table-list mr-2 text-emerald-400"></i> Q-Table Knowledge (Current State)</h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -170,14 +163,9 @@ function Dashboard() {
   );
 }
 
-// ==========================================
-// Main App Router (Very Simple!)
-// ==========================================
 export default function App() {
-  // אם אנחנו בכתובת של הלוגים - נציג רק את דף הלוגים
   if (window.location.pathname === '/logs') {
     return <LogsPage />;
   }
-  // אחרת נציג את הדאשבורד הרגיל
   return <Dashboard />;
 }

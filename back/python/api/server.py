@@ -29,7 +29,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- משתנים גלובליים לטובת הדאשבורד והלוגים ---
 last_system_status = {
     "pods": 0, "cpu_usage": 0.0, "cpu_level": 0,
     "action": "Waiting...", "reward": 0.0, "q_values": [0,0,0,0]
@@ -38,9 +37,9 @@ last_system_status = {
 brain_logs_buffer = []
 
 def add_log(msg: str):
-    print(msg) 
+    print(msg)
     brain_logs_buffer.append(msg)
-    if len(brain_logs_buffer) > 100: 
+    if len(brain_logs_buffer) > 100:
         brain_logs_buffer.pop(0)
 
 @app.get("/status")
@@ -51,7 +50,6 @@ def get_dashboard_status():
 def get_logs_data():
     return {"logs": brain_logs_buffer}
 
-# --- מנגנון מנוחת המערכת (Cooldown) ---
 system_resting = False
 
 def apply_system_rest():
@@ -61,7 +59,6 @@ def apply_system_rest():
     time.sleep(30)
     system_resting = False
     add_log("[SYSTEM] Cooldown finished. AI is awake.\n")
-# ----------------------------------------
 
 MAX_PODS = APP_CONFIG.get("system_limits", {}).get("max_pods", 15)
 num_states = APP_CONFIG["levels"]["count"] * (MAX_PODS + 1)
@@ -79,7 +76,7 @@ else:
 class ClusterState(BaseModel):
     pod_count: int
     cpu_usage: float
-    is_crashed: bool 
+    is_crashed: bool
 
 def get_cpu_level(usage: float) -> int:
     if usage < APP_CONFIG["cpu_thresholds"]["low"]: return APP_CONFIG["levels"]["low"]
@@ -116,7 +113,7 @@ def decide(req: ClusterState):
     global system_resting
     if system_resting:
         last_system_status["action"] = "Resting (30s)..."
-        return {"action": "None"}
+        return {"action": "Resting"} # תוקן כדי שה-Go יקבל את זה ויעצור
 
     cpu_level = get_cpu_level(req.cpu_usage)
     current_replicas = min(req.pod_count, MAX_PODS)
@@ -157,9 +154,12 @@ def get_action(req: StateRequest):
 
 def apply_k8s_patch(command_list):
     patch = {"spec": {"template": {"spec": {"containers": [{"name": "python-container", "command": command_list}]}}}}
-    with open("patch.json", "w") as f: json.dump(patch, f)
     
-    cmd = "kubectl patch deployment yair-api-python --patch-file patch.json"
+    patch_file_path = os.path.join(current_dir, "patch.json")
+    with open(patch_file_path, "w") as f:
+        json.dump(patch, f)
+    
+    cmd = f'kubectl patch deployment yair-api-python --patch-file "{patch_file_path}"'
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     if result.returncode == 0:
         add_log("[SYSTEM] Load command applied! K8s is recreating pods (wait up to 60s for metrics server).")
