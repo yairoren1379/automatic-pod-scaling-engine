@@ -61,6 +61,7 @@ def setup_zookeeper_config():
             "random_range_start": 0,
             "offset_to_last_index": 1,
             "update_factor_numerator": 1.0,
+            "min_learning_rate": 0.05,
             "failure_count_init": 0,
             "failure_count_increment": 1,
             "min_tries_default": 10,

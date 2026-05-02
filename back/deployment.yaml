@@ -14,7 +14,8 @@ spec:
     spec:
       containers:
       - name: python-container
-        image: debian:buster-slim
+        image: alpine:latest
+        imagePullPolicy: IfNotPresent
         command: ["/bin/sh", "-c", "while true; do true; done"]
         resources:
           requests:

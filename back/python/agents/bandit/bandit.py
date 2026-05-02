@@ -33,7 +33,8 @@ class EpsilonGreedyBandit:
         action_counts = self.action_counts[action]
 
         old_q = self.q_values[action]
-        new_q = old_q + (APP_CONFIG["logic_constants"]["update_factor_numerator"] / action_counts) * (reward - old_q)
+        learning_rate = max(APP_CONFIG["logic_constants"]["min_learning_rate"], APP_CONFIG["logic_constants"]["update_factor_numerator"] / action_counts)
+        new_q = old_q + learning_rate * (reward - old_q)
         self.q_values[action] = new_q
 
     def __repr__(self):
