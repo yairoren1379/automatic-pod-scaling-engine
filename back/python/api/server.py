@@ -19,6 +19,8 @@ sys.path.append(project_root)
 from config_loader import APP_CONFIG
 from agents.q_learning.q_learning import QLearningAgent
 
+from history_db import log_run
+
 app = FastAPI(title="K8s RL Learning Engine")
 
 app.add_middleware(
@@ -218,6 +220,14 @@ def update_agent(req: LearnRequest):
     agent.updateAction(state=state_idx, action=req.action, reward=req.reward, next_state=next_state_idx, done=req.done)
     last_system_status["reward"] = req.reward
     
+    is_catastrophic = req.reward <= APP_CONFIG["rl_hyperparameters"].get("catastrophic_penalty", -10.0)
+    new_q_val = agent.q_table[state_idx][req.action]
+    
+    try:
+        log_run(state=state_idx, action=req.action, reward=req.reward, is_catastrophic=is_catastrophic, new_q_value=new_q_val)
+    except Exception as e:
+        add_log(f"[DB ERROR] Failed to save to database: {e}")
+    
     step_counter += 1
     if step_counter % 2 == 0:
         q_values = agent.q_table[state_idx]
@@ -231,6 +241,5 @@ def update_agent(req: LearnRequest):
         add_log(log_text)
 
     return {"status": "updated", "new_q_value": agent.q_table[state_idx][req.action]}
-
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
