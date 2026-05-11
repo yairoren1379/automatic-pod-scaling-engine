@@ -17,7 +17,7 @@ import (
 	"k8s.io/client-go/kubernetes"                 // to change Kubernetes resources
 	"k8s.io/client-go/tools/clientcmd"            // to create the secure connection to the cluster
 	"k8s.io/client-go/util/homedir"               // to find the home directory
-	"k8s.io/client-go/util/retry"
+	"k8s.io/client-go/util/retry"                 // to handle retries on conflicts when updating resources
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 	"k8s.io/utils/pointer"
 )
@@ -183,6 +183,8 @@ func scaleDeployment(clientset *kubernetes.Clientset, namespace string, deployme
 		newReplicas := currentReplicas + change
 		if newReplicas < int32(config.SystemLimits.MinPods) {
 			newReplicas = int32(config.SystemLimits.MinPods)
+		}else if newReplicas > int32(config.SystemLimits.MaxPods) {
+			newReplicas = int32(config.SystemLimits.MaxPods)
 		}
 		result.Spec.Replicas = pointer.Int32(newReplicas)
 
@@ -225,6 +227,7 @@ func getEnv(key, fallback string) string {
 	}
 	return fallback
 }
+
 func main() {
 	zkHost := getEnv("ZK_HOST", "127.0.0.1:2181")
 	brainURL := getEnv("BRAIN_URL", "http://127.0.0.1:8000")
