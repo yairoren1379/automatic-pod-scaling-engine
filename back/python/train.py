@@ -11,7 +11,8 @@ def train_system():
     
     env = MockKubernetesEnv()
     agent = QLearningAgent(num_states=num_states, num_actions=num_actions)
-    safety_bandit = SafetyBandit(arms_count=num_actions)
+    
+    safety_bandit = SafetyBandit(num_states=num_states, arms_count=num_actions)
 
     print("Start Training Session")
 
@@ -21,7 +22,8 @@ def train_system():
         total_reward = 0
 
         while not done:
-            bandit_safe_actions = safety_bandit.get_safe_actions(max_failure_rate=0.4, min_tries=7000)
+            bandit_safe_actions = safety_bandit.get_safe_actions(state=state, max_failure_rate=0.4, min_tries=7000)
+            
             if not bandit_safe_actions:
                 bandit_safe_actions = [APP_CONFIG["actions"]["scale_up"], APP_CONFIG["actions"]["scale_down"], APP_CONFIG["actions"]["no_action"], APP_CONFIG["actions"]["restart"]]
                 
@@ -39,11 +41,14 @@ def train_system():
             action = agent.select_action(state, allowed_actions=final_safe_actions)
             is_catastrophic = env.is_failure(action)
             next_state, reward, done, info = env.step(action)
-            safety_bandit.update_from_outcome(action, is_catastrophic)
+            
+            safety_bandit.update_from_outcome(state=state, action=action, is_catastrophic_failure=is_catastrophic)
+            
             agent.updateAction(state, action, reward, next_state, done)
             
             state = next_state
             total_reward += reward
+            
         agent.decay_epsilon()
         
         if (episode + 1) % 100 == 0:
@@ -83,7 +88,6 @@ def train_system():
             
     print("Readable report saved to brain_readable.txt")
 
-    
     return agent, safety_bandit
 
 if __name__ == "__main__":
