@@ -71,6 +71,7 @@ if os.path.exists("brain_model.pkl"):
     with open("brain_model.pkl", "rb") as f:
         data = pickle.load(f)
         agent.q_table = data["q_table"]
+        agent.epsilon = 0.05
     print("Loaded pre-trained model successfully!")
 else:
     print("No pre-trained model found. Starting with fresh agent.")
