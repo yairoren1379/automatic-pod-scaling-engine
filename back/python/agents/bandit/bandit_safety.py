@@ -28,7 +28,6 @@ class SafetyBandit(EpsilonGreedyBandit):
         else:
             reward = self.safe_reward
 
-        # uses the father class update method
         self.updateAction(state, action, reward)
 
     def get_safe_actions(self,state: int, max_failure_rate: float, min_tries: int = APP_CONFIG["logic_constants"]["min_tries_default"]) -> List[int]:

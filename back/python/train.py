@@ -6,7 +6,7 @@ import pickle
 
 def train_system():
     max_pods = APP_CONFIG["system_limits"]["max_pods"]
-    num_states = APP_CONFIG["levels"]["count"] * (max_pods + 1)
+    num_states = len(APP_CONFIG["levels"]) * (max_pods + 1)
     num_actions = len(APP_CONFIG["actions"])
     
     env = MockKubernetesEnv()
@@ -16,7 +16,7 @@ def train_system():
 
     print("Start Training Session")
 
-    for episode in range(100000):
+    for episode in range(1000000):
         state = env.reset()
         done = False
         total_reward = 0
@@ -40,6 +40,9 @@ def train_system():
                 
             action = agent.select_action(state, allowed_actions=final_safe_actions)
             is_catastrophic = env.is_failure(action)
+            if is_catastrophic:
+                print(f"[!] Catastrophic Failure detected! State: {state}, Action: {action}")
+            
             next_state, reward, done, info = env.step(action)
             
             safety_bandit.update_from_outcome(state=state, action=action, is_catastrophic_failure=is_catastrophic)

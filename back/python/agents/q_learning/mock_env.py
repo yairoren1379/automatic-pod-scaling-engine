@@ -1,16 +1,15 @@
 #train and chack q-learning agent in a mock kubernetes environment
 import random
 from typing import Tuple
-from unittest import case
 from config_loader import APP_CONFIG
 
 class MockKubernetesEnv:
     def __init__(self):
         self.min_pods = APP_CONFIG["system_limits"]["min_pods"]
         self.max_pods = APP_CONFIG["system_limits"]["max_pods"]
-        self.cpu_levels_count = APP_CONFIG["levels"]["count"]
+        self.cpu_levels_count = len(APP_CONFIG["levels"])
         
-        self.cpu_level = APP_CONFIG["logic_constants"]["initial_cpu_level"]
+        self.cpu_level = APP_CONFIG["levels"]["medium"]
         self.replicas = APP_CONFIG["logic_constants"]["initial_replicas"]
         self.step_count = APP_CONFIG["logic_constants"]["initial_step_count"]
         self.max_steps = APP_CONFIG["rl_hyperparameters"]["max_steps"]
@@ -34,6 +33,13 @@ class MockKubernetesEnv:
             return True
         return False
 
+    def _apply_action_effects(self, replica_delta: int, cpu_delta: int):
+        self.replicas = max(self.min_pods, min(self.max_pods, self.replicas + replica_delta))
+        
+        max_cpu_level = self.cpu_levels_count - 1
+        min_cpu_level = APP_CONFIG["logic_constants"]["min_level"]
+        self.cpu_level = max(min_cpu_level, min(max_cpu_level, self.cpu_level + cpu_delta))
+        
     def step(self, action: int) -> Tuple[int, float, bool, dict]:
         self.step_count += APP_CONFIG["logic_constants"]["step_size"]
 
@@ -41,19 +47,16 @@ class MockKubernetesEnv:
         noise = random.choice([-APP_CONFIG["logic_constants"]["step_size"], 0, APP_CONFIG["logic_constants"]["step_size"]])
         self.cpu_level = min(self.cpu_levels_count - 1, max(APP_CONFIG["logic_constants"]["min_level"], self.cpu_level + noise))
 
+        step_size = APP_CONFIG["logic_constants"]["step_size"]
+
         if action == APP_CONFIG["actions"]["scale_up"]:
-            self.replicas = min(self.max_pods, self.replicas + APP_CONFIG["logic_constants"]["step_size"])
-            if self.cpu_level > APP_CONFIG["logic_constants"]["min_level"]:
-                self.cpu_level -= APP_CONFIG["logic_constants"]["step_size"]
+            self._apply_action_effects(step_size, step_size)
 
         elif action == APP_CONFIG["actions"]["scale_down"]:
-                self.replicas = max(self.min_pods, self.replicas - APP_CONFIG["logic_constants"]["step_size"])
-                if self.cpu_level < self.cpu_levels_count - 1:
-                    self.cpu_level += APP_CONFIG["logic_constants"]["step_size"]
+            self._apply_action_effects(-step_size, step_size)
 
         elif action == APP_CONFIG["actions"]["restart"]:
-            if self.cpu_level < self.cpu_levels_count - 1:
-                self.cpu_level += APP_CONFIG["logic_constants"]["step_size"]
+            self._apply_action_effects(0, step_size)
 
         elif action == APP_CONFIG["actions"]["no_action"]:
             pass

@@ -54,7 +54,6 @@ def setup_zookeeper_config():
             "low": 0,
             "medium": 1,
             "high": 2,
-            "count": 3  # number of levels for state representation
         },
         "logic_constants": {
             "action_count_init": 0,
