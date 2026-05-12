@@ -63,7 +63,7 @@ def apply_system_rest():
     add_log("[SYSTEM] Cooldown finished. AI is awake.\n")
 
 MAX_PODS = APP_CONFIG.get("system_limits", {}).get("max_pods", 15)
-num_states = APP_CONFIG["levels"]["count"] * (MAX_PODS + 1)
+num_states = len(APP_CONFIG["levels"]) * (MAX_PODS + 1)
 
 agent = QLearningAgent(num_states=num_states, num_actions=len(APP_CONFIG["actions"]))
 
