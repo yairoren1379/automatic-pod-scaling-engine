@@ -6,7 +6,9 @@ import pickle
 
 def train_system():
     max_pods = APP_CONFIG["system_limits"]["max_pods"]
-    num_states = len(APP_CONFIG["levels"]) * (max_pods + 1)
+    num_buckets = APP_CONFIG["metrics_config"]["num_buckets"]
+    
+    num_states = num_buckets * num_buckets * (max_pods + 1)
     num_actions = len(APP_CONFIG["actions"])
     
     env = MockKubernetesEnv()
@@ -16,13 +18,13 @@ def train_system():
 
     print("Start Training Session")
 
-    for episode in range(1000000):
+    for episode in range(10000000):
         state = env.reset()
         done = False
         total_reward = 0
 
         while not done:
-            bandit_safe_actions = safety_bandit.get_safe_actions(state=state, max_failure_rate=0.4, min_tries=7000)
+            bandit_safe_actions = safety_bandit.get_safe_actions(state=state, max_failure_rate=0.4, min_tries=70000)
             
             if not bandit_safe_actions:
                 bandit_safe_actions = [APP_CONFIG["actions"]["scale_up"], APP_CONFIG["actions"]["scale_down"], APP_CONFIG["actions"]["no_action"], APP_CONFIG["actions"]["restart"]]
@@ -71,14 +73,16 @@ def train_system():
     action_names = {v: k for k, v in APP_CONFIG["actions"].items()}
     with open("api/brain_readable.txt", "w") as f:
         f.write("--- Q-Learning Final Report ---\n")
-        f.write(f"Total Episodes: 100000\n")
+        f.write(f"Total Episodes: 10000000\n")
         f.write("-----------------------------\n\n")
         
         for state_idx, q_values in enumerate(agent.q_table):
-            cpu_level = state_idx // (max_pods + 1)
             replicas = state_idx % (max_pods + 1)
+            remaining = state_idx // (max_pods + 1)
+            ram_bucket = remaining % num_buckets
+            cpu_bucket = remaining // num_buckets
             
-            f.write(f"State {state_idx} [CPU Level: {cpu_level}, Pods: {replicas}]:\n")
+            f.write(f"State {state_idx} [CPU Bucket: {cpu_bucket}, RAM Bucket: {ram_bucket}, Pods: {replicas}]:\n")
             
             for action_idx, score in enumerate(q_values):
                 action_name = action_names.get(action_idx, "Unknown")

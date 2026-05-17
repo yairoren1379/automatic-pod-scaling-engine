@@ -32,7 +32,7 @@ app.add_middleware(
 )
 
 last_system_status = {
-    "pods": 0, "cpu_usage": 0.0, "cpu_level": 0,
+    "pods": 0, "cpu_usage": 0.0, "ram_usage": 0.0, "cpu_bucket": 0, "ram_bucket": 0,
     "action": "Waiting...", "reward": 0.0, "q_values": [0,0,0,0]
 }
 
@@ -63,7 +63,9 @@ def apply_system_rest():
     add_log("[SYSTEM] Cooldown finished. AI is awake.\n")
 
 MAX_PODS = APP_CONFIG.get("system_limits", {}).get("max_pods", 15)
-num_states = len(APP_CONFIG["levels"]) * (MAX_PODS + 1)
+NUM_BUCKETS = APP_CONFIG.get("metrics_config", {}).get("num_buckets", 34)
+
+num_states = NUM_BUCKETS * NUM_BUCKETS * (MAX_PODS + 1)
 
 agent = QLearningAgent(num_states=num_states, num_actions=len(APP_CONFIG["actions"]))
 
@@ -75,16 +77,18 @@ if os.path.exists("brain_model.pkl"):
     print("Loaded pre-trained model successfully!")
 else:
     print("No pre-trained model found. Starting with fresh agent.")
-
+    
 class ClusterState(BaseModel):
     pod_count: int
     cpu_usage: float
+    ram_usage: float
     is_crashed: bool
 
-def get_cpu_level(usage: float) -> int:
-    if usage < APP_CONFIG["cpu_thresholds"]["low"]: return APP_CONFIG["levels"]["low"]
-    elif usage < APP_CONFIG["cpu_thresholds"]["medium"]: return APP_CONFIG["levels"]["medium"]
-    else: return APP_CONFIG["levels"]["high"]
+def get_bucket(usage: float) -> int:
+    return int(max(0, min(100, usage)) // APP_CONFIG.get("metrics_config", {}).get("bucket_step", 3))
+
+def encode_state(cpu_bucket: int, ram_bucket: int, replicas: int) -> int:
+    return (cpu_bucket * NUM_BUCKETS * (MAX_PODS + 1)) + (ram_bucket * (MAX_PODS + 1)) + replicas
 
 def get_action_string(action_id: int) -> str:
     mapping = {
@@ -96,7 +100,8 @@ def get_action_string(action_id: int) -> str:
     return mapping.get(action_id, "None")
 
 class StateRequest(BaseModel):
-    cpu_level: int
+    cpu_percentage: float
+    ram_percentage: float
     replicas: int
     allowed_actions: Optional[List[int]] = None
     
@@ -116,18 +121,23 @@ def decide(req: ClusterState):
     global system_resting
     if system_resting:
         last_system_status["action"] = "Resting (30s)..."
-        return {"action": "Resting"} # תוקן כדי שה-Go יקבל את זה ויעצור
+        return {"action": "Resting"}
 
-    cpu_level = get_cpu_level(req.cpu_usage)
+    cpu_bucket = get_bucket(req.cpu_usage)
+    ram_bucket = get_bucket(req.ram_usage)
     current_replicas = min(req.pod_count, MAX_PODS)
-    state_idx = cpu_level * (MAX_PODS + 1) + current_replicas
+    
+    state_idx = encode_state(cpu_bucket, ram_bucket, current_replicas)
+    
     safe_actions = list(APP_CONFIG["actions"].values())
     action_id = agent.select_action(state_idx, allowed_actions=safe_actions)
     action_str = get_action_string(action_id)
     
     last_system_status["pods"] = current_replicas
     last_system_status["cpu_usage"] = req.cpu_usage
-    last_system_status["cpu_level"] = cpu_level
+    last_system_status["ram_usage"] = req.ram_usage
+    last_system_status["cpu_bucket"] = cpu_bucket
+    last_system_status["ram_bucket"] = ram_bucket
     last_system_status["action"] = action_str
     last_system_status["q_values"] = agent.q_table[state_idx]
     
@@ -144,10 +154,15 @@ def get_action(req: StateRequest):
             "q_values": [0,0,0,0]
         }
 
-    state_idx = req.cpu_level * (MAX_PODS + 1) + req.replicas
+    cpu_bucket = get_bucket(req.cpu_percentage)
+    ram_bucket = get_bucket(req.ram_percentage)
+    state_idx = encode_state(cpu_bucket, ram_bucket, req.replicas)
+    
     if state_idx >= num_states or state_idx < APP_CONFIG["logic_constants"]["min_index"]:
         raise HTTPException(status_code=400, detail="State out of bounds")
+        
     action = agent.select_action(state_idx, allowed_actions=req.allowed_actions)
+    
     return {
         "recommended_action": action,
         "state_index": state_idx,
@@ -215,8 +230,14 @@ def update_agent(req: LearnRequest):
     
     current_replicas = min(req.state.replicas, MAX_PODS)
     next_replicas = min(req.next_state.replicas, MAX_PODS)
-    state_idx = req.state.cpu_level * (MAX_PODS + 1) + current_replicas
-    next_state_idx = req.next_state.cpu_level * (MAX_PODS + 1) + next_replicas
+    
+    cpu_bucket = get_bucket(req.state.cpu_percentage)
+    ram_bucket = get_bucket(req.state.ram_percentage)
+    state_idx = encode_state(cpu_bucket, ram_bucket, current_replicas)
+    
+    next_cpu_bucket = get_bucket(req.next_state.cpu_percentage)
+    next_ram_bucket = get_bucket(req.next_state.ram_percentage)
+    next_state_idx = encode_state(next_cpu_bucket, next_ram_bucket, next_replicas)
 
     agent.updateAction(state=state_idx, action=req.action, reward=req.reward, next_state=next_state_idx, done=req.done)
     last_system_status["reward"] = req.reward
@@ -234,7 +255,7 @@ def update_agent(req: LearnRequest):
         q_values = agent.q_table[state_idx]
         log_text = (
             f"--- Q-Table Snapshot (Step {step_counter}) ---\n"
-            f"State: [CPU Level:{req.state.cpu_level}, Pods:{current_replicas}] | Action: {get_action_string(req.action)} | Reward: {req.reward}\n"
+            f"State: [CPU:{req.state.cpu_percentage}% RAM:{req.state.ram_percentage}% Pods:{current_replicas}] | Action: {get_action_string(req.action)} | Reward: {req.reward}\n"
             f"Brain Knowledge -> ScaleUp: {q_values[APP_CONFIG['actions']['scale_up']]:.2f} | "
             f"ScaleDown: {q_values[APP_CONFIG['actions']['scale_down']]:.2f} | "
             f"None: {q_values[APP_CONFIG['actions']['no_action']]:.2f}\n"
@@ -242,5 +263,6 @@ def update_agent(req: LearnRequest):
         add_log(log_text)
 
     return {"status": "updated", "new_q_value": agent.q_table[state_idx][req.action]}
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

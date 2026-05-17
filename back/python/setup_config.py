@@ -16,9 +16,10 @@ def setup_zookeeper_config():
             "loop_delay_seconds": 30
         },
         
-        "cpu_thresholds": {
-            "low": 33,
-            "medium": 66
+        "metrics_config": {
+            "max_percentage": 100,
+            "bucket_step": 3,
+            "num_buckets": 34
         },
         
         "rl_hyperparameters": {
@@ -49,12 +50,7 @@ def setup_zookeeper_config():
             "no_action": 2,
             "restart": 3
         },
-
-        "levels": {
-            "low": 0,
-            "medium": 1,
-            "high": 2,
-        },
+        
         "logic_constants": {
             "action_count_init": 0,
             "random_range_start": 0,
@@ -64,11 +60,13 @@ def setup_zookeeper_config():
             "failure_count_init": 0,
             "failure_count_increment": 1,
             "min_tries_default": 10,
-            "min_level": 0,
             "step_size": 1,
-            "ideal_cpu_level": 1,
+            "min_level": 0,        # Bucket 0 (0-2%)
+            "ideal_cpu_level": 16,              # Bucket 16 represents ~48-50%
+            "ideal_ram_level": 16,              # Bucket 16 represents ~48-50%
+            "initial_cpu_percentage": 50,
+            "initial_ram_percentage": 50,
             "ideal_replicas": 1,
-            "initial_cpu_level": 1,
             "initial_replicas": 1,
             "initial_step_count": 0,
             "initial_reward": 0.0,

@@ -30,15 +30,18 @@ type SystemLimits struct {
 	LoopDelaySeconds  int `json:"loop_delay_seconds"`
 }
 
-type CpuThresholds struct {
-	Low    float64 `json:"low"`
-	Medium float64 `json:"medium"`
+type MetricsConfig struct {
+	MaxPercentage int `json:"max_percentage"`
+	BucketStep    int `json:"bucket_step"`
+	NumBuckets    int `json:"num_buckets"`
 }
 
 type Rewards struct {
-	Good    float64 `json:"good"`
-	Neutral float64 `json:"neutral"`
-	Bad     float64 `json:"bad"`
+	MockIdeal          float64 `json:"mock_ideal"`
+	MockHighLoad       float64 `json:"mock_high_load"`
+	MockWaste          float64 `json:"mock_waste"`
+	MockRestartPenalty float64 `json:"mock_restart_penalty"`
+	Bad                float64 `json:"bad"`
 }
 
 type ActionsConfig struct {
@@ -48,34 +51,29 @@ type ActionsConfig struct {
 	Restart   int `json:"restart"`
 }
 
-type LevelsConfig struct {
-	Low    int `json:"low"`
-	Medium int `json:"medium"`
-	High   int `json:"high"`
-}
-
 type LogicConstants struct {
-	OffsetToLastIndex int `json:"offset_to_last_index"`
-	MinLevel          int `json:"min_level"`
-	InitialReplicas   int `json:"initial_replicas"`
+	InitialReplicas int `json:"initial_replicas"`
+	IdealReplicas   int `json:"ideal_replicas"`
+	MinLevel        int `json:"min_level"`
+	IdealCpuLevel   int `json:"ideal_cpu_level"`
+	IdealRamLevel   int `json:"ideal_ram_level"`
 }
 
 type AppConfig struct {
 	SystemLimits   SystemLimits   `json:"system_limits"`
-	CpuThresholds  CpuThresholds  `json:"cpu_thresholds"`
+	MetricsConfig  MetricsConfig  `json:"metrics_config"`
 	Rewards        Rewards        `json:"rewards"`
 	Actions        ActionsConfig  `json:"actions"`
-	Levels         LevelsConfig   `json:"levels"`
 	LogicConstants LogicConstants `json:"logic_constants"`
 }
 
 var config AppConfig
 
-// define the structure of the cluster state
-// that will be sent to Python
+// define the structure of the cluster state that will be sent to Python
 type ClusterState struct {
 	PodCount  int     `json:"pod_count"`
 	CpuUsage  float64 `json:"cpu_usage"`
+	RamUsage  float64 `json:"ram_usage"`
 	IsCrashed bool    `json:"is_crashed"`
 }
 
@@ -86,8 +84,9 @@ type AgentResponse struct {
 
 // define the structure of the training data sent to Python
 type StateRequest struct {
-	CpuLevel int `json:"cpu_level"`
-	Replicas int `json:"replicas"`
+	CpuPercentage float64 `json:"cpu_percentage"`
+	RamPercentage float64 `json:"ram_percentage"`
+	Replicas      int     `json:"replicas"`
 }
 
 // define the learning data from each step
@@ -127,48 +126,51 @@ func load_zookeeper_config(zkHost string) error {
 	return nil
 }
 
-func getCPULevel(usage float64) int {
-	if usage < config.CpuThresholds.Low {
-		return config.Levels.Low
-	} else if usage < config.CpuThresholds.Medium {
-		return config.Levels.Medium
+func getBucket(percentage float64) int {
+	if percentage < 0 {
+		percentage = 0
 	}
-	return config.Levels.High
+	if percentage > 100 {
+		percentage = 100
+	}
+	return int(percentage) / config.MetricsConfig.BucketStep
 }
 
-func calculateReward(cpuLevel int, action int) float64 {
-	if cpuLevel == config.Levels.High {
-		if action == config.Actions.ScaleUp {
-			return config.Rewards.Good
-		}
-		return config.Rewards.Bad
+func calculateReward(cpuPercent float64, ramPercent float64, replicas int, action int) float64 {
+	reward := 0.0
+
+	cpuBucket := getBucket(cpuPercent)
+	ramBucket := getBucket(ramPercent)
+
+	// ideal state
+	if cpuBucket == config.LogicConstants.IdealCpuLevel && replicas == config.LogicConstants.IdealReplicas {
+		reward += config.Rewards.MockIdeal
 	}
 
-	if cpuLevel == config.Levels.Low {
-		if action == config.Actions.ScaleDown {
-			return config.Rewards.Good
-		}
-		if action == config.Actions.ScaleUp {
-			return config.Rewards.Bad
-		}
-		return config.Rewards.Neutral
+	// high load
+	if cpuBucket >= config.MetricsConfig.NumBuckets-2 {
+		reward += config.Rewards.MockHighLoad
+	}
+	if ramBucket >= config.MetricsConfig.NumBuckets-3 {
+		reward += config.Rewards.MockHighLoad * 2
 	}
 
-	if cpuLevel == config.Levels.Medium {
-		if action == config.Actions.NoAction {
-			return config.Rewards.Good
-		}
-		return config.Rewards.Bad
+	// waste of resources
+	if cpuBucket <= config.LogicConstants.MinLevel && replicas >= config.SystemLimits.MaxPods-2 {
+		reward += config.Rewards.MockWaste
 	}
 
-	return config.Rewards.Neutral
+	// reset penalty
+	if action == config.Actions.Restart {
+		reward += config.Rewards.MockRestartPenalty
+	}
+
+	return reward
 }
 
 func scaleDeployment(clientset *kubernetes.Clientset, namespace string, deploymentName string, change int32) {
 	deploymentsClient := clientset.AppsV1().Deployments(namespace)
 
-	// gets the current deployment from the cluster
-	// and updates the replica count
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		result, getErr := deploymentsClient.Get(context.TODO(), deploymentName, metav1.GetOptions{})
 		if getErr != nil {
@@ -183,12 +185,11 @@ func scaleDeployment(clientset *kubernetes.Clientset, namespace string, deployme
 		newReplicas := currentReplicas + change
 		if newReplicas < int32(config.SystemLimits.MinPods) {
 			newReplicas = int32(config.SystemLimits.MinPods)
-		}else if newReplicas > int32(config.SystemLimits.MaxPods) {
+		} else if newReplicas > int32(config.SystemLimits.MaxPods) {
 			newReplicas = int32(config.SystemLimits.MaxPods)
 		}
 		result.Spec.Replicas = pointer.Int32(newReplicas)
 
-		// updates the deployment with the new replica count
 		_, updateErr := deploymentsClient.Update(context.TODO(), result, metav1.UpdateOptions{})
 		return updateErr
 	})
@@ -198,27 +199,64 @@ func scaleDeployment(clientset *kubernetes.Clientset, namespace string, deployme
 	}
 }
 
-func getRealCPULoad(metricsClient *metricsv.Clientset, namespace string, labelSelector string, podCount int) float64 {
-	if podCount == config.LogicConstants.MinLevel {
-		return float64(config.LogicConstants.MinLevel)
+func getRealCPULoad(metricsClient *metricsv.Clientset, namespace string, labelSelector string, podCount int, maxCpuMilli float64) float64 {
+	// הוספנו את maxCpuMilli כפרמטר והגנו מפני חלוקה באפס
+	if podCount == 0 || maxCpuMilli == 0 {
+		return 0.0
 	}
 
 	podMetricsList, err := metricsClient.MetricsV1beta1().PodMetricses(namespace).List(apiContext.TODO(), metav1.ListOptions{
 		LabelSelector: labelSelector,
 	})
 	if err != nil {
-		fmt.Printf("Warning: Failed to get metrics: %v\n", err)
-		return float64(config.LogicConstants.MinLevel)
+		fmt.Printf("Warning: Failed to get CPU metrics: %v\n", err)
+		return 0.0
 	}
 
-	var totalCpuMilli int64 = int64(config.LogicConstants.MinLevel)
+	var totalCpuMilli int64 = 0
 	for _, podMetric := range podMetricsList.Items {
 		for _, container := range podMetric.Containers {
 			totalCpuMilli += container.Usage.Cpu().MilliValue()
 		}
 	}
 
-	return float64(totalCpuMilli) / float64(podCount)
+	avgCpuMilli := float64(totalCpuMilli) / float64(podCount)
+
+	percentage := (avgCpuMilli / maxCpuMilli) * 100.0
+
+	if percentage > 100.0 {
+		percentage = 100.0
+	}
+	return percentage
+}
+
+func getRealRAMLoad(metricsClient *metricsv.Clientset, namespace string, labelSelector string, podCount int, maxMemoryBytes float64) float64 {
+	if podCount == 0 || maxMemoryBytes == 0 {
+		return 0.0
+	}
+
+	podMetricsList, err := metricsClient.MetricsV1beta1().PodMetricses(namespace).List(apiContext.TODO(), metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+	if err != nil {
+		fmt.Printf("Warning: Failed to get RAM metrics: %v\n", err)
+		return 0.0
+	}
+
+	var totalMemoryBytes int64 = 0
+	for _, podMetric := range podMetricsList.Items {
+		for _, container := range podMetric.Containers {
+			totalMemoryBytes += container.Usage.Memory().Value()
+		}
+	}
+
+	avgMemoryBytes := float64(totalMemoryBytes) / float64(podCount)
+	percentage := (avgMemoryBytes / maxMemoryBytes) * 100.0
+
+	if percentage > 100.0 {
+		percentage = 100.0
+	}
+	return percentage
 }
 
 func getEnv(key, fallback string) string {
@@ -281,11 +319,29 @@ func main() {
 		}
 
 		currentPodCount := len(pods.Items)
-		if currentPodCount == config.SystemLimits.MinPods-1 {
+		if currentPodCount < config.SystemLimits.MinPods {
 			currentPodCount = config.SystemLimits.MinPods
 		}
-		realCpu := getRealCPULoad(metricsClient, targetNamespace, targetLabel, currentPodCount)
-		currentLevel := getCPULevel(realCpu)
+
+		// Dynamically fetch the pod memory and CPU limits
+		var podMemoryLimit float64 = 512 * 1024 * 1024 // Fallback 512MB
+		var podCpuLimit float64 = 500                  // Fallback 500m
+
+		if currentPodCount > 0 && len(pods.Items[0].Spec.Containers) > 0 {
+			memLimit := pods.Items[0].Spec.Containers[0].Resources.Limits.Memory().Value()
+			if memLimit > 0 {
+				podMemoryLimit = float64(memLimit)
+			}
+
+			cpuLimit := pods.Items[0].Spec.Containers[0].Resources.Limits.Cpu().MilliValue()
+			if cpuLimit > 0 {
+				podCpuLimit = float64(cpuLimit)
+			}
+		}
+
+		// Fetch CPU and RAM metrics as clean 0-100% percentages
+		realCpu := getRealCPULoad(metricsClient, targetNamespace, targetLabel, currentPodCount, podCpuLimit)
+		realRam := getRealRAMLoad(metricsClient, targetNamespace, targetLabel, currentPodCount, podMemoryLimit)
 
 		isCrashed := false
 		for _, pod := range pods.Items {
@@ -294,9 +350,11 @@ func main() {
 			}
 		}
 
+		// Prepare State Payload for FastAPI
 		state := ClusterState{
 			PodCount:  currentPodCount,
 			CpuUsage:  realCpu,
+			RamUsage:  realRam,
 			IsCrashed: isCrashed,
 		}
 
@@ -312,8 +370,8 @@ func main() {
 		json.NewDecoder(resp.Body).Decode(&agentResp)
 		resp.Body.Close()
 
-		fmt.Printf("State: [Pods: %d, CPU: %.2f%%] -> Brain says: %s\n",
-			state.PodCount, state.CpuUsage, agentResp.Action)
+		fmt.Printf("State: [Pods: %d, CPU: %.2f%%, RAM: %.2f%%] -> Brain says: %s\n",
+			state.PodCount, state.CpuUsage, state.RamUsage, agentResp.Action)
 
 		actionID := config.Actions.NoAction
 		limitHit := false
@@ -342,7 +400,7 @@ func main() {
 			fmt.Println("Restart requested")
 		case "None", "NoAction":
 			actionID = config.Actions.NoAction
-			fmt.Println(" No action")
+			fmt.Println("No action")
 		case "Resting":
 			fmt.Println("System is Resting. Go Controller pausing for 30 seconds...")
 			time.Sleep(30 * time.Second)
@@ -351,28 +409,32 @@ func main() {
 
 		time.Sleep(time.Duration(config.SystemLimits.LoopDelaySeconds) * time.Second)
 
+		// Get state AFTER the action was performed
 		newPodsList, _ := clientset.CoreV1().Pods(targetNamespace).List(apiContext.TODO(), metav1.ListOptions{
 			LabelSelector: targetLabel,
 		})
 		newPodCount := len(newPodsList.Items)
-		if newPodCount == config.SystemLimits.MinPods-1 {
+		if newPodCount < config.SystemLimits.MinPods {
 			newPodCount = config.SystemLimits.MinPods
 		}
 
-		newRealCpu := getRealCPULoad(metricsClient, targetNamespace, targetLabel, newPodCount)
-		newLevel := getCPULevel(newRealCpu)
+		// התיקון: הוספת podCpuLimit לקריאה של getRealCPULoad
+		newRealCpu := getRealCPULoad(metricsClient, targetNamespace, targetLabel, newPodCount, podCpuLimit)
+		newRealRam := getRealRAMLoad(metricsClient, targetNamespace, targetLabel, newPodCount, podMemoryLimit)
 
 		var reward float64
 		if limitHit {
 			reward = config.Rewards.Bad
 		} else {
-			reward = calculateReward(currentLevel, actionID)
+			reward = calculateReward(realCpu, realRam, currentPodCount, actionID)
 		}
+
+		// Prepare Training Payload (With RAM and CPU percentages)
 		trainData := LearnRequest{
-			State:     StateRequest{CpuLevel: currentLevel, Replicas: currentPodCount},
+			State:     StateRequest{CpuPercentage: realCpu, RamPercentage: realRam, Replicas: currentPodCount},
 			Action:    actionID,
 			Reward:    reward,
-			NextState: StateRequest{CpuLevel: newLevel, Replicas: newPodCount},
+			NextState: StateRequest{CpuPercentage: newRealCpu, RamPercentage: newRealRam, Replicas: newPodCount},
 			Done:      false,
 		}
 
