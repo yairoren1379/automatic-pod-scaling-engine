@@ -27,7 +27,7 @@ def setup_zookeeper_config():
             "alpha": 0.3,           # how fast the agent learns
             "gamma": 0.99,          # how much future rewards are valued
             "epsilon_min": 0.05,     # minimum exploration rate
-            "epsilon_decay": 0.995,  # rate at which epsilon decays
+            "epsilon_decay": 0.999,  # rate at which epsilon decays
             "max_steps": 100,
             "q_value_init": 0.0,
             "catastrophic_penalty": -10.0

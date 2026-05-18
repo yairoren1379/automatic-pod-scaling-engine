@@ -7,22 +7,29 @@ class MockKubernetesEnv:
     def __init__(self):
         self.min_pods = APP_CONFIG["system_limits"]["min_pods"]
         self.max_pods = APP_CONFIG["system_limits"]["max_pods"]
-        self.cpu_levels_count = len(APP_CONFIG["levels"])
+        self.num_buckets = APP_CONFIG["metrics_config"]["num_buckets"]
         
-        self.cpu_level = APP_CONFIG["levels"]["medium"]
+        self.cpu_bucket = self.num_buckets // 2
+        self.ram_bucket = self.num_buckets // 2
         self.replicas = APP_CONFIG["logic_constants"]["initial_replicas"]
         self.step_count = APP_CONFIG["logic_constants"]["initial_step_count"]
         self.max_steps = APP_CONFIG["rl_hyperparameters"]["max_steps"]
 
-    # convert state to a single integer in base 3 from 2 dim to 1 dim
     def _encode_state(self) -> int:
-        return self.cpu_level * (self.max_pods + 1) + self.replicas
+        # מחשבים רק את טווח הפודים החוקי (למשל מ-1 עד 15 זה 15 מצבים, ולא 16)
+        valid_pod_states = self.max_pods - self.min_pods + 1
+        
+        # מתקנים את האינדקס כדי שיתחיל מ-0 במקום מ-min_pods
+        pod_index = self.replicas - self.min_pods
+        
+        return (self.cpu_bucket * self.num_buckets + self.ram_bucket) * valid_pod_states + pod_index
 
     # resets the environment
     # returns the initial state
     def reset(self) -> int:
-        self.cpu_level = random.choice(range(self.cpu_levels_count))
-        self.replicas = APP_CONFIG["logic_constants"]["initial_replicas"]
+        self.cpu_bucket = random.choice(range(self.num_buckets))
+        self.ram_bucket = random.choice(range(self.num_buckets))
+        self.replicas = random.randint(self.min_pods, self.max_pods)
         self.step_count = APP_CONFIG["logic_constants"]["initial_step_count"]
         return self._encode_state()
     
@@ -31,21 +38,29 @@ class MockKubernetesEnv:
             return True
         if action == APP_CONFIG["actions"]["scale_up"] and self.replicas >= self.max_pods:
             return True
+        # Failure condition to match real world RAM crash
+        if (self.cpu_bucket >= self.num_buckets - 2 or self.ram_bucket >= self.num_buckets - 2) and self.replicas <= 2:
+            if action != APP_CONFIG["actions"]["scale_up"]:
+                return True
         return False
 
-    def _apply_action_effects(self, replica_delta: int, cpu_delta: int):
+    def _apply_action_effects(self, replica_delta: int, load_delta: int):
         self.replicas = max(self.min_pods, min(self.max_pods, self.replicas + replica_delta))
         
-        max_cpu_level = self.cpu_levels_count - 1
-        min_cpu_level = APP_CONFIG["logic_constants"]["min_level"]
-        self.cpu_level = max(min_cpu_level, min(max_cpu_level, self.cpu_level + cpu_delta))
+        max_bucket = self.num_buckets - 1
+        min_bucket = APP_CONFIG["logic_constants"]["min_level"]
+        self.cpu_bucket = max(min_bucket, min(max_bucket, self.cpu_bucket + load_delta))
+        self.ram_bucket = max(min_bucket, min(max_bucket, self.ram_bucket + load_delta))
         
     def step(self, action: int) -> Tuple[int, float, bool, dict]:
         self.step_count += APP_CONFIG["logic_constants"]["step_size"]
 
         # -1 - less cpu, 0 - same, +1 - more cpu
-        noise = random.choice([-APP_CONFIG["logic_constants"]["step_size"], 0, APP_CONFIG["logic_constants"]["step_size"]])
-        self.cpu_level = min(self.cpu_levels_count - 1, max(APP_CONFIG["logic_constants"]["min_level"], self.cpu_level + noise))
+        noise_cpu = random.choice([-APP_CONFIG["logic_constants"]["step_size"], 0, APP_CONFIG["logic_constants"]["step_size"]])
+        noise_ram = random.choice([-APP_CONFIG["logic_constants"]["step_size"], 0, APP_CONFIG["logic_constants"]["step_size"]])
+        
+        self.cpu_bucket = min(self.num_buckets - 1, max(APP_CONFIG["logic_constants"]["min_level"], self.cpu_bucket + noise_cpu))
+        self.ram_bucket = min(self.num_buckets - 1, max(APP_CONFIG["logic_constants"]["min_level"], self.ram_bucket + noise_ram))
 
         step_size = APP_CONFIG["logic_constants"]["step_size"]
 
@@ -65,15 +80,17 @@ class MockKubernetesEnv:
         reward = APP_CONFIG["logic_constants"]["initial_reward"]
 
         #ideal state
-        if self.cpu_level == APP_CONFIG["logic_constants"]["ideal_cpu_level"] and self.replicas == APP_CONFIG["logic_constants"]["ideal_replicas"]:
+        if self.cpu_bucket == APP_CONFIG["logic_constants"]["ideal_cpu_level"] and self.replicas == APP_CONFIG["logic_constants"]["ideal_replicas"]:
             reward += APP_CONFIG["rewards"]["mock_ideal"]
 
         #high load
-        if self.cpu_level == self.cpu_levels_count - 1:
+        if self.cpu_bucket >= self.num_buckets - 2:
             reward += APP_CONFIG["rewards"]["mock_high_load"]
+        if self.ram_bucket >= self.num_buckets - 3:
+            reward += APP_CONFIG["rewards"]["mock_high_load"] * 2
 
         # waste of resources
-        if self.cpu_level == APP_CONFIG["logic_constants"]["min_level"] and self.replicas >= self.max_pods - 2:
+        if self.cpu_bucket <= APP_CONFIG["logic_constants"]["min_level"] and self.replicas >= self.max_pods - 2:
             reward += APP_CONFIG["rewards"]["mock_waste"]
 
         # reset penalty
@@ -84,7 +101,8 @@ class MockKubernetesEnv:
 
         next_state = self._encode_state()
         info = {
-            "cpu_level": self.cpu_level,
+            "cpu_bucket": self.cpu_bucket,
+            "ram_bucket": self.ram_bucket,
             "replicas": self.replicas,
         }
         return next_state, reward, done, info

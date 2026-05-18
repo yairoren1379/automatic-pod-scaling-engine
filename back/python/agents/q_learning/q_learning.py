@@ -40,10 +40,9 @@ class QLearningAgent:
         allowed_actions: Optional[List[int]] = None,
     ) -> int:
 
-        if allowed_actions is None:
-            allowed_actions = list(range(self.num_actions))
+        if not allowed_actions:
+            return APP_CONFIG["actions"]["no_action"]
 
-        # חקירה
         if random.random() < self.epsilon:
             return random.choice(allowed_actions)
 
