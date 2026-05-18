@@ -418,7 +418,6 @@ func main() {
 			newPodCount = config.SystemLimits.MinPods
 		}
 
-		// התיקון: הוספת podCpuLimit לקריאה של getRealCPULoad
 		newRealCpu := getRealCPULoad(metricsClient, targetNamespace, targetLabel, newPodCount, podCpuLimit)
 		newRealRam := getRealRAMLoad(metricsClient, targetNamespace, targetLabel, newPodCount, podMemoryLimit)
 

@@ -186,7 +186,7 @@ def apply_k8s_patch(command_list):
 
 @app.post("/start-load")
 def start_load(background_tasks: BackgroundTasks):
-    apply_k8s_patch(["/bin/sh", "-c", "while true; do true; done"])
+    apply_k8s_patch(["/bin/sh", "-c", "apk update && apk add stress && stress --cpu 1 --vm 1 --vm-bytes 250M"])
     background_tasks.add_task(apply_system_rest)
     return {"status": "High Load Started, entering cooldown"}
 
@@ -198,15 +198,15 @@ def stop_load(background_tasks: BackgroundTasks):
 
 @app.post("/scale-min")
 def scale_min(background_tasks: BackgroundTasks):
-    cmd = "kubectl scale deployment yair-api-python --replicas=0"
+    cmd = "kubectl scale deployment yair-api-python --replicas=1"
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     if result.returncode == 0:
-        add_log("[SYSTEM] Scaled K8s deployment to 0 pods!")
+        add_log("[SYSTEM] Scaled K8s deployment to 1 pods!")
     else:
-        add_log(f"[ERROR] Failed to scale to 0: {result.stderr}")
+        add_log(f"[ERROR] Failed to scale to 1: {result.stderr}")
         
     background_tasks.add_task(apply_system_rest)
-    return {"status": "Scaled to 0, entering cooldown"}
+    return {"status": "Scaled to 1, entering cooldown"}
 
 @app.post("/scale-max")
 def scale_max(background_tasks: BackgroundTasks):

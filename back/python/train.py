@@ -7,10 +7,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 def train_system():
+    min_pods = APP_CONFIG["system_limits"]["min_pods"]
     max_pods = APP_CONFIG["system_limits"]["max_pods"]
     num_buckets = APP_CONFIG["metrics_config"]["num_buckets"]
+    valid_pod_states = max_pods - min_pods + 1
     
-    num_states = num_buckets * num_buckets * (max_pods + 1)
+    num_states = num_buckets * num_buckets * valid_pod_states
     num_actions = len(APP_CONFIG["actions"])
     
     env = MockKubernetesEnv()
@@ -19,7 +21,7 @@ def train_system():
     safety_bandit = SafetyBandit(num_states=num_states, arms_count=num_actions)
 
     print("Start Training Session")
-    NUM_EPISODES = 1000000
+    NUM_EPISODES = 1200000
     
     episodes_history = []
     rewards_history = []
@@ -35,31 +37,24 @@ def train_system():
             if not bandit_safe_actions:
                 bandit_safe_actions = [APP_CONFIG["actions"]["scale_up"], APP_CONFIG["actions"]["scale_down"], APP_CONFIG["actions"]["no_action"], APP_CONFIG["actions"]["restart"]]
                 
-            current_pods = state % (max_pods + 1)
+            current_pods = (state % valid_pod_states) + min_pods
             final_safe_actions = bandit_safe_actions.copy()
             
-            if current_pods <= 1:
+            if current_pods <= min_pods:
                 if APP_CONFIG["actions"]["scale_down"] in final_safe_actions: final_safe_actions.remove(APP_CONFIG["actions"]["scale_down"])
-                if APP_CONFIG["actions"]["restart"] in final_safe_actions: final_safe_actions.remove(APP_CONFIG["actions"]["restart"])
-            elif current_pods >= max_pods:
+            if current_pods >= max_pods:
                 if APP_CONFIG["actions"]["scale_up"] in final_safe_actions: final_safe_actions.remove(APP_CONFIG["actions"]["scale_up"])
-            elif not final_safe_actions:
-                final_safe_actions = [APP_CONFIG["actions"]["no_action"]]
-                
+            
             action = agent.select_action(state, allowed_actions=final_safe_actions)
             is_catastrophic = env.is_failure(action)
-            # if is_catastrophic:
-            #     print(f"[!] Catastrophic Failure detected! State: {state}, Action: {action}")
-            
             next_state, reward, done, info = env.step(action)
             
             safety_bandit.update_from_outcome(state=state, action=action, is_catastrophic_failure=is_catastrophic)
-            
             agent.updateAction(state, action, reward, next_state, done)
             
             state = next_state
             total_reward += reward
-            
+        
         agent.decay_epsilon()
         
         if (episode + 1) % 100 == 0:
@@ -69,34 +64,16 @@ def train_system():
 
     print("Training Finished!")
     
-    # --- חלק יצירת הגרף ---
-    print("Generating Learning Curve Graph...")
-    plt.figure(figsize=(12, 7))
-
-    # 1. הגרף המקורי (הקופצני) - נעשה אותו חלש וחצי שקוף
-    plt.plot(episodes_history, rewards_history, color='#3b82f6', alpha=0.3, label='Raw Reward')
-
-    # 2. הרעיון שלך: קו מגמה ליניארי (y = mx + b)
-    # הפונקציה polyfit מוצאת את ה-m וה-b האידיאליים ביותר לנתונים שלנו
-    m, b = np.polyfit(episodes_history, rewards_history, 1)
-    trendline = [m * x + b for x in episodes_history]
-    plt.plot(episodes_history, trendline, color='#10b981', linewidth=3, linestyle='--', label=f'Linear Trend (y={m:.2f}x+{b:.0f})')
-
-    # 3. ממוצע נע (Moving Average) - מחליק את הגרף כדי לראות את ההתכנסות
-    window = 15 # ממוצע של כל 15 נקודות (1500 אפיזודות)
-    if len(rewards_history) >= window:
-        moving_avg = np.convolve(rewards_history, np.ones(window)/window, mode='valid')
-        plt.plot(episodes_history[window-1:], moving_avg, color='#ef4444', linewidth=2.5, label=f'Moving Average (Window: {window})')
-
-    plt.title('RL Agent Learning Curve (Reward over Episodes)', fontsize=14, fontweight='bold')
-    plt.xlabel('Episodes', fontsize=12)
-    plt.ylabel('Reward', fontsize=12)
-    plt.grid(True, linestyle='--', alpha=0.5)
-    plt.legend(loc='lower right', fontsize=11) # מוסיף מקרא שמסביר מה זה כל קו
-    plt.tight_layout()
-    plt.savefig('api/learning_curve.png', dpi=300) # שומר ברזולוציה גבוהה לספר
-    print("Graph saved to api/learning_curve.png")
-    # -----------------------
+    plt.figure(figsize=(10, 5))
+    plt.plot(episodes_history, rewards_history, alpha=0.3, label='Raw Reward')
+    window = 50
+    moving_avg = np.convolve(rewards_history, np.ones(window)/window, mode='valid')
+    plt.plot(episodes_history[window-1:], moving_avg, color='red', label='Moving Avg')
+    plt.title('Learning Curve')
+    plt.xlabel('Episodes')
+    plt.ylabel('Reward')
+    plt.legend()
+    plt.savefig('api/learning_curve.png')
     
     with open("api/brain_model.pkl", "wb") as f:
         pickle.dump({
@@ -114,13 +91,12 @@ def train_system():
         f.write("-----------------------------\n\n")
         
         for state_idx, q_values in enumerate(agent.q_table):
-            replicas = state_idx % (max_pods + 1)
-            remaining = state_idx // (max_pods + 1)
+            replicas = (state_idx % valid_pod_states) + min_pods
+            remaining = state_idx // valid_pod_states
             ram_bucket = remaining % num_buckets
             cpu_bucket = remaining // num_buckets
             
             f.write(f"State {state_idx} [CPU Bucket: {cpu_bucket}, RAM Bucket: {ram_bucket}, Pods: {replicas}]:\n")
-            
             for action_idx, score in enumerate(q_values):
                 action_name = action_names.get(action_idx, "Unknown")
                 f.write(f"  Action '{action_name}': {score:.2f}\n")
