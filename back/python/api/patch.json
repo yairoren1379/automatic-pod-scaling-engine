@@ -1,1 +1,1 @@
-{"spec": {"template": {"spec": {"containers": [{"name": "python-container", "command": ["/bin/sh", "-c", "apk update && apk add stress && stress --cpu 1 --vm 1 --vm-bytes 250M"]}]}}}}
+{"spec": {"template": {"spec": {"containers": [{"name": "python-container", "command": ["/bin/sh", "-c", "awk 'BEGIN { for(i=0;i<1500000;i++) a[i]=\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"; while(1) {} }'"]}]}}}}

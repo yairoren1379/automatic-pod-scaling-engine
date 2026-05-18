@@ -18,6 +18,24 @@ def train_system():
     env = MockKubernetesEnv()
     agent = QLearningAgent(num_states=num_states, num_actions=num_actions)
     
+    all_possible_actions = list(APP_CONFIG["actions"].values())
+
+    for state_idx in range(num_states):
+        current_pods = (state_idx % valid_pod_states) + min_pods
+        
+        allowed_for_this_state = all_possible_actions.copy()
+        
+        if current_pods <= min_pods and APP_CONFIG["actions"]["scale_down"] in allowed_for_this_state:
+            allowed_for_this_state.remove(APP_CONFIG["actions"]["scale_down"])
+            
+        if current_pods >= max_pods and APP_CONFIG["actions"]["scale_up"] in allowed_for_this_state:
+            allowed_for_this_state.remove(APP_CONFIG["actions"]["scale_up"])
+            
+
+        for action in all_possible_actions:
+            if action not in allowed_for_this_state:
+                agent.q_table[state_idx][action] = -float('inf')
+                
     safety_bandit = SafetyBandit(num_states=num_states, arms_count=num_actions)
 
     print("Start Training Session")

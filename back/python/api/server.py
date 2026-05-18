@@ -18,6 +18,7 @@ sys.path.append(project_root)
 
 from config_loader import APP_CONFIG
 from agents.q_learning.q_learning import QLearningAgent
+from agents.bandit.bandit_safety import SafetyBandit
 
 from history_db import log_run
 
@@ -62,17 +63,26 @@ def apply_system_rest():
     system_resting = False
     add_log("[SYSTEM] Cooldown finished. AI is awake.\n")
 
+MIN_PODS = APP_CONFIG.get("system_limits", {}).get("min_pods", 1)
 MAX_PODS = APP_CONFIG.get("system_limits", {}).get("max_pods", 15)
 NUM_BUCKETS = APP_CONFIG.get("metrics_config", {}).get("num_buckets", 34)
 
-num_states = NUM_BUCKETS * NUM_BUCKETS * (MAX_PODS + 1)
+VALID_POD_STATES = MAX_PODS - MIN_PODS + 1
+num_states = NUM_BUCKETS * NUM_BUCKETS * VALID_POD_STATES
+num_actions = len(APP_CONFIG["actions"])
 
-agent = QLearningAgent(num_states=num_states, num_actions=len(APP_CONFIG["actions"]))
+agent = QLearningAgent(num_states=num_states, num_actions=num_actions)
+safety_bandit = SafetyBandit(num_states=num_states, arms_count=num_actions)
 
 if os.path.exists("brain_model.pkl"):
     with open("brain_model.pkl", "rb") as f:
         data = pickle.load(f)
         agent.q_table = data["q_table"]
+        
+        if "bandit_counts" in data and "bandit_failures" in data:
+            safety_bandit.action_counts = data["bandit_counts"]
+            safety_bandit.failure_counts = data["bandit_failures"]
+            
         agent.epsilon = 0.05
     print("Loaded pre-trained model successfully!")
 else:
@@ -88,7 +98,8 @@ def get_bucket(usage: float) -> int:
     return int(max(0, min(100, usage)) // APP_CONFIG.get("metrics_config", {}).get("bucket_step", 3))
 
 def encode_state(cpu_bucket: int, ram_bucket: int, replicas: int) -> int:
-    return (cpu_bucket * NUM_BUCKETS * (MAX_PODS + 1)) + (ram_bucket * (MAX_PODS + 1)) + replicas
+    pod_index = replicas - MIN_PODS
+    return (cpu_bucket * NUM_BUCKETS + ram_bucket) * VALID_POD_STATES + pod_index
 
 def get_action_string(action_id: int) -> str:
     mapping = {
@@ -186,9 +197,11 @@ def apply_k8s_patch(command_list):
 
 @app.post("/start-load")
 def start_load(background_tasks: BackgroundTasks):
-    apply_k8s_patch(["/bin/sh", "-c", "apk update && apk add stress && stress --cpu 1 --vm 1 --vm-bytes 250M"])
+    load_cmd = "awk 'BEGIN { for(i=0;i<1500000;i++) a[i]=\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"; while(1) {} }'"
+    
+    apply_k8s_patch(["/bin/sh", "-c", load_cmd])
     background_tasks.add_task(apply_system_rest)
-    return {"status": "High Load Started, entering cooldown"}
+    return {"status": "High Load Started (CPU + RAM)"}
 
 @app.post("/stop-load")
 def stop_load(background_tasks: BackgroundTasks):

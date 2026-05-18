@@ -16,7 +16,7 @@ spec:
       - name: python-container
         image: alpine:latest
         imagePullPolicy: IfNotPresent
-        command: ["/bin/sh", "-c", "apk update && apk add stress && stress --cpu 1 --vm 1 --vm-bytes 250M"]
+        command: ["/bin/sh", "-c", "awk 'BEGIN { for(i=0;i<1500000;i++) a[i]=\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"; while(1) {} }'"]
         resources:
           requests:
             cpu: "100m"

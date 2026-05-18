@@ -327,7 +327,7 @@ func main() {
 		var podMemoryLimit float64 = 512 * 1024 * 1024 // Fallback 512MB
 		var podCpuLimit float64 = 500                  // Fallback 500m
 
-		if currentPodCount > 0 && len(pods.Items[0].Spec.Containers) > 0 {
+		if len(pods.Items) > 0 && len(pods.Items[0].Spec.Containers) > 0 {
 			memLimit := pods.Items[0].Spec.Containers[0].Resources.Limits.Memory().Value()
 			if memLimit > 0 {
 				podMemoryLimit = float64(memLimit)

@@ -63,15 +63,16 @@ class MockKubernetesEnv:
         self.ram_bucket = min(self.num_buckets - 1, max(APP_CONFIG["logic_constants"]["min_level"], self.ram_bucket + noise_ram))
 
         step_size = APP_CONFIG["logic_constants"]["step_size"]
+        load_effect = step_size
 
         if action == APP_CONFIG["actions"]["scale_up"]:
-            self._apply_action_effects(step_size, step_size)
+            self._apply_action_effects(step_size, -load_effect)
 
         elif action == APP_CONFIG["actions"]["scale_down"]:
-            self._apply_action_effects(-step_size, step_size)
+            self._apply_action_effects(-step_size, load_effect)
 
         elif action == APP_CONFIG["actions"]["restart"]:
-            self._apply_action_effects(0, step_size)
+            self._apply_action_effects(0, load_effect)
 
         elif action == APP_CONFIG["actions"]["no_action"]:
             pass
