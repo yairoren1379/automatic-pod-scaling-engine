@@ -84,14 +84,26 @@ class MockKubernetesEnv:
         if self.cpu_bucket == APP_CONFIG["logic_constants"]["ideal_cpu_level"] and self.replicas == APP_CONFIG["logic_constants"]["ideal_replicas"]:
             reward += APP_CONFIG["rewards"]["mock_ideal"]
 
+        high_load_threshold = 24
+        is_in_high_load = 0
         #high load
-        if self.cpu_bucket >= self.num_buckets - 2:
-            reward += APP_CONFIG["rewards"]["mock_high_load"]
-        if self.ram_bucket >= self.num_buckets - 3:
-            reward += APP_CONFIG["rewards"]["mock_high_load"] * 2
+        if self.cpu_bucket >= high_load_threshold:
+            severity_cpu = (self.cpu_bucket - high_load_threshold) + 1
+            reward += (APP_CONFIG["rewards"]["mock_cpu_high_load"] * severity_cpu)
+            is_in_high_load = 1
+            
+        if self.ram_bucket >= high_load_threshold:
+            severity_ram = (self.ram_bucket - high_load_threshold) + 1
+            reward += (APP_CONFIG["rewards"]["mock_ram_high_load"] * severity_ram)
+            is_in_high_load = 1
+            
+        if is_in_high_load:
+            if action == APP_CONFIG["actions"]["scale_up"]:
+                reward += APP_CONFIG["rewards"]["mock_ideal"] * 5
 
+        waste_threshold = 7
         # waste of resources
-        if self.cpu_bucket <= APP_CONFIG["logic_constants"]["min_level"] and self.replicas >= self.max_pods - 2:
+        if self.cpu_bucket <= waste_threshold and self.replicas >= 8:
             reward += APP_CONFIG["rewards"]["mock_waste"]
 
         # reset penalty

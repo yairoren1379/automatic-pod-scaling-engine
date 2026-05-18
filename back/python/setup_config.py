@@ -23,14 +23,15 @@ def setup_zookeeper_config():
         },
         
         "rl_hyperparameters": {
+            "num_episodes": 300000,
             "epsilon": 1,         # how often to explore
             "alpha": 0.1,           # how fast the agent learns
             "gamma": 0.99,          # how much future rewards are valued
             "epsilon_min": 0.05,     # minimum exploration rate
-            "epsilon_decay": 0.999,  # rate at which epsilon decays
+            "epsilon_decay": 0.99995,  # rate at which epsilon decays
             "max_steps": 100,
             "q_value_init": 0.0,
-            "catastrophic_penalty": -10.0
+            "catastrophic_penalty": -500.0
         },
 
         "rewards": {
@@ -39,7 +40,8 @@ def setup_zookeeper_config():
             "bad": -10.0,
             "safe_reward": 0.0,
             "mock_ideal": 5.0,
-            "mock_high_load": -3.0,
+            "mock_cpu_high_load": -8.0,
+            "mock_ram_high_load": -12.0,
             "mock_waste": -2.0,
             "mock_restart_penalty": -1.0
         },

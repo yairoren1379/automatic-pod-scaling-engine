@@ -39,10 +39,13 @@ def train_system():
     safety_bandit = SafetyBandit(num_states=num_states, arms_count=num_actions)
 
     print("Start Training Session")
-    NUM_EPISODES = 1200000
+    NUM_EPISODES = APP_CONFIG["rl_hyperparameters"]["num_episodes"]
     
     episodes_history = []
     rewards_history = []
+    total_count = 0
+    count_with_epsilon_above_min = 0
+    count_with_epsilon_below_min = 0
 
     for episode in range(NUM_EPISODES):
         state = env.reset()
@@ -67,6 +70,10 @@ def train_system():
             is_catastrophic = env.is_failure(action)
             next_state, reward, done, info = env.step(action)
             
+            if is_catastrophic:
+                reward += APP_CONFIG["rl_hyperparameters"]["catastrophic_penalty"]
+                done = True
+            
             safety_bandit.update_from_outcome(state=state, action=action, is_catastrophic_failure=is_catastrophic)
             agent.updateAction(state, action, reward, next_state, done)
             
@@ -74,13 +81,25 @@ def train_system():
             total_reward += reward
         
         agent.decay_epsilon()
-        
+        total_count += 1
+        if(agent.epsilon > APP_CONFIG["rl_hyperparameters"]["epsilon_min"]):
+            count_with_epsilon_above_min +=1
+        else:
+            count_with_epsilon_below_min +=1
+            
         if (episode + 1) % 100 == 0:
             print(f"Episode {episode + 1}: Avg Reward: {total_reward:.2f}")
             episodes_history.append(episode + 1)
             rewards_history.append(total_reward)
 
     print("Training Finished!")
+    print("------------------------------------")
+    print("epsilon:", agent.epsilon)
+    print("Total episodes:", total_count)
+    print("Episodes with epsilon > min:", count_with_epsilon_above_min)
+    print("Episodes with epsilon < min:", count_with_epsilon_below_min)
+    print("------------------------------------")
+
     
     plt.figure(figsize=(10, 5))
     plt.plot(episodes_history, rewards_history, alpha=0.3, label='Raw Reward')
