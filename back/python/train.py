@@ -34,7 +34,7 @@ def train_system():
 
         for action in all_possible_actions:
             if action not in allowed_for_this_state:
-                agent.q_table[state_idx][action] = -float('inf')
+                agent.q_table[state_idx][action] = -1e9
                 
     safety_bandit = SafetyBandit(num_states=num_states, arms_count=num_actions)
 

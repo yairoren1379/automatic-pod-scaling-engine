@@ -1,1 +1,1 @@
-{"spec": {"template": {"spec": {"containers": [{"name": "python-container", "command": ["/bin/sh", "-c", "awk 'BEGIN { for(i=0;i<1500000;i++) a[i]=\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"; while(1) {} }'"]}]}}}}
+{"spec": {"template": {"spec": {"containers": [{"name": "python-container", "command": ["/bin/sh", "-c", "sleep 3600"]}]}}}}

@@ -70,6 +70,8 @@ def setup_zookeeper_config():
             "initial_ram_percentage": 50,
             "high_load_threshold": 24,
             "low_load_threshold": 8,
+            "critical_load_offset": 3,
+            "critical_min_pods": 2,
             "ideal_replicas": 1,
             "initial_replicas": 1,
             "initial_step_count": 0,

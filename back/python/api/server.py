@@ -20,6 +20,8 @@ from config_loader import APP_CONFIG
 from agents.q_learning.q_learning import QLearningAgent
 from agents.bandit.bandit_safety import SafetyBandit
 
+from agents.q_learning.mock_env import calculate_reward
+
 from history_db import log_run
 
 app = FastAPI(title="K8s RL Learning Engine")
@@ -119,7 +121,6 @@ class StateRequest(BaseModel):
 class LearnRequest(BaseModel):
     state: StateRequest
     action: int
-    reward: float
     next_state: StateRequest
     done: bool
 
@@ -181,33 +182,29 @@ def get_action(req: StateRequest):
         "q_values": agent.q_table[state_idx]
     }
 
-def apply_k8s_patch(command_list):
-    patch = {"spec": {"template": {"spec": {"containers": [{"name": "python-container", "command": command_list}]}}}}
-    
-    patch_file_path = os.path.join(current_dir, "patch.json")
-    with open(patch_file_path, "w") as f:
-        json.dump(patch, f)
-    
-    cmd = f'kubectl patch deployment yair-api-python --patch-file "{patch_file_path}"'
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if result.returncode == 0:
-        add_log("[SYSTEM] Load command applied! K8s is recreating pods (wait up to 60s for metrics server).")
-    else:
-        add_log(f"[ERROR] Failed to patch K8s: {result.stderr}")
+is_dynamic_load_active = False
+
+@app.get("/is-load-active")
+def check_load():
+    return {"active": is_dynamic_load_active}
 
 @app.post("/start-load")
 def start_load(background_tasks: BackgroundTasks):
-    load_cmd = "awk 'BEGIN { for(i=0;i<1500000;i++) a[i]=\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"; while(1) {} }'"
+    global is_dynamic_load_active
+    is_dynamic_load_active = True
+    add_log("[SYSTEM] Dashboard triggered Dynamic Load! (Total Traffic: 500%)")
     
-    apply_k8s_patch(["/bin/sh", "-c", load_cmd])
     background_tasks.add_task(apply_system_rest)
-    return {"status": "High Load Started (CPU + RAM)"}
+    return {"status": "Dynamic Load Started"}
 
 @app.post("/stop-load")
 def stop_load(background_tasks: BackgroundTasks):
-    apply_k8s_patch(["/bin/sh", "-c", "sleep 3600"])
+    global is_dynamic_load_active
+    is_dynamic_load_active = False
+    add_log("[SYSTEM] Dashboard stopped Dynamic Load. Traffic back to normal.")
+    
     background_tasks.add_task(apply_system_rest)
-    return {"status": "Load Stopped, entering cooldown"}
+    return {"status": "Load Stopped"}
 
 @app.post("/scale-min")
 def scale_min(background_tasks: BackgroundTasks):
@@ -252,14 +249,16 @@ def update_agent(req: LearnRequest):
     next_ram_bucket = get_bucket(req.next_state.ram_percentage)
     next_state_idx = encode_state(next_cpu_bucket, next_ram_bucket, next_replicas)
 
-    agent.updateAction(state=state_idx, action=req.action, reward=req.reward, next_state=next_state_idx, done=req.done)
-    last_system_status["reward"] = req.reward
+    calculated_reward = calculate_reward(cpu_bucket, ram_bucket, current_replicas, req.action, req.done)
+
+    agent.updateAction(state=state_idx, action=req.action, reward=calculated_reward, next_state=next_state_idx, done=req.done)
+    last_system_status["reward"] = calculated_reward
     
-    is_catastrophic = req.reward <= APP_CONFIG["rl_hyperparameters"].get("catastrophic_penalty", -10.0)
+    is_catastrophic = calculated_reward <= APP_CONFIG["rl_hyperparameters"].get("catastrophic_penalty", -10.0)
     new_q_val = agent.q_table[state_idx][req.action]
     
     try:
-        log_run(state=state_idx, action=req.action, reward=req.reward, is_catastrophic=is_catastrophic, new_q_value=new_q_val)
+        log_run(state=state_idx, action=req.action, reward=calculated_reward, is_catastrophic=is_catastrophic, new_q_value=new_q_val)
     except Exception as e:
         add_log(f"[DB ERROR] Failed to save to database: {e}")
     
@@ -268,14 +267,14 @@ def update_agent(req: LearnRequest):
         q_values = agent.q_table[state_idx]
         log_text = (
             f"--- Q-Table Snapshot (Step {step_counter}) ---\n"
-            f"State: [CPU:{req.state.cpu_percentage}% RAM:{req.state.ram_percentage}% Pods:{current_replicas}] | Action: {get_action_string(req.action)} | Reward: {req.reward}\n"
+            f"State: [CPU:{req.state.cpu_percentage}% RAM:{req.state.ram_percentage}% Pods:{current_replicas}] | Action: {get_action_string(req.action)} | Reward: {calculated_reward}\n"
             f"Brain Knowledge -> ScaleUp: {q_values[APP_CONFIG['actions']['scale_up']]:.2f} | "
             f"ScaleDown: {q_values[APP_CONFIG['actions']['scale_down']]:.2f} | "
             f"None: {q_values[APP_CONFIG['actions']['no_action']]:.2f}\n"
         )
         add_log(log_text)
 
-    return {"status": "updated", "new_q_value": agent.q_table[state_idx][req.action]}
+    return {"status": "updated", "new_q_value": new_q_val}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

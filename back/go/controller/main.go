@@ -3,21 +3,21 @@ package main
 import (
 	"bytes"
 	"context"
-	apiContext "context" // to manage context for API calls
+	apiContext "context"
 	"encoding/json"
-	"flag" // to handle command-line flags
-	"fmt"  // to print output
+	"flag"
+	"fmt"
 	"net/http"
 	"os"
-	"path/filepath" // to handle file paths
+	"path/filepath"
 	"time"
 
 	"github.com/go-zookeeper/zk"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1" // to work with Kubernetes object metadata
-	"k8s.io/client-go/kubernetes"                 // to change Kubernetes resources
-	"k8s.io/client-go/tools/clientcmd"            // to create the secure connection to the cluster
-	"k8s.io/client-go/util/homedir"               // to find the home directory
-	"k8s.io/client-go/util/retry"                 // to handle retries on conflicts when updating resources
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/homedir"
+	"k8s.io/client-go/util/retry"
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 	"k8s.io/utils/pointer"
 )
@@ -36,14 +36,6 @@ type MetricsConfig struct {
 	NumBuckets    int `json:"num_buckets"`
 }
 
-type Rewards struct {
-	MockIdeal          float64 `json:"mock_ideal"`
-	MockHighLoad       float64 `json:"mock_high_load"`
-	MockWaste          float64 `json:"mock_waste"`
-	MockRestartPenalty float64 `json:"mock_restart_penalty"`
-	Bad                float64 `json:"bad"`
-}
-
 type ActionsConfig struct {
 	ScaleUp   int `json:"scale_up"`
 	ScaleDown int `json:"scale_down"`
@@ -52,26 +44,26 @@ type ActionsConfig struct {
 }
 
 type LogicConstants struct {
-	InitialReplicas int `json:"initial_replicas"`
-	IdealReplicas   int `json:"ideal_replicas"`
-	MinLevel        int `json:"min_level"`
-	IdealCpuLevel   int `json:"ideal_cpu_level"`
-	IdealRamLevel   int `json:"ideal_ram_level"`
-	HighLoadThreshold int `json:"high_load_threshold"`
-	LowLoadThreshold  int `json:"low_load_threshold"`
+	InitialReplicas    int `json:"initial_replicas"`
+	IdealReplicas      int `json:"ideal_replicas"`
+	MinLevel           int `json:"min_level"`
+	IdealCpuLevel      int `json:"ideal_cpu_level"`
+	IdealRamLevel      int `json:"ideal_ram_level"`
+	HighLoadThreshold  int `json:"high_load_threshold"`
+	LowLoadThreshold   int `json:"low_load_threshold"`
+	CriticalLoadOffset int `json:"critical_load_offset"`
+	CriticalMinPods    int `json:"critical_min_pods"`
 }
 
 type AppConfig struct {
 	SystemLimits   SystemLimits   `json:"system_limits"`
 	MetricsConfig  MetricsConfig  `json:"metrics_config"`
-	Rewards        Rewards        `json:"rewards"`
 	Actions        ActionsConfig  `json:"actions"`
 	LogicConstants LogicConstants `json:"logic_constants"`
 }
 
 var config AppConfig
 
-// define the structure of the cluster state that will be sent to Python
 type ClusterState struct {
 	PodCount  int     `json:"pod_count"`
 	CpuUsage  float64 `json:"cpu_usage"`
@@ -79,23 +71,19 @@ type ClusterState struct {
 	IsCrashed bool    `json:"is_crashed"`
 }
 
-// define the structure of the response from Python
 type AgentResponse struct {
 	Action string `json:"action"`
 }
 
-// define the structure of the training data sent to Python
 type StateRequest struct {
 	CpuPercentage float64 `json:"cpu_percentage"`
 	RamPercentage float64 `json:"ram_percentage"`
 	Replicas      int     `json:"replicas"`
 }
 
-// define the learning data from each step
 type LearnRequest struct {
 	State     StateRequest `json:"state"`
 	Action    int          `json:"action"`
-	Reward    float64      `json:"reward"`
 	NextState StateRequest `json:"next_state"`
 	Done      bool         `json:"done"`
 }
@@ -138,52 +126,6 @@ func getBucket(percentage float64) int {
 	return int(percentage) / config.MetricsConfig.BucketStep
 }
 
-func calculateReward(cpuPercent float64, ramPercent float64, replicas int, action int) float64 {
-	reward := 0.0
-
-	cpuBucket := getBucket(cpuPercent)
-	ramBucket := getBucket(ramPercent)
-
-	// ideal state
-	if cpuBucket == config.LogicConstants.IdealCpuLevel && replicas == config.LogicConstants.IdealReplicas {
-		reward += config.Rewards.MockIdeal
-	}
-
-	highLoadThreshold := config.LogicConstants.HighLoadThreshold
-
-	// CPU High Load Logic (Gradient + Waive Penalty)
-	if cpuBucket >= highLoadThreshold {
-		severityCpu := float64((cpuBucket - highLoadThreshold) + 1)
-		if action != config.Actions.ScaleUp {
-			reward += config.Rewards.MockCpuHighLoad * severityCpu
-		} else {
-			reward += config.Rewards.MockIdeal
-		}
-	}
-
-	// RAM High Load Logic (Gradient + Waive Penalty)
-	if ramBucket >= highLoadThreshold {
-		severityRam := float64((ramBucket - highLoadThreshold) + 1)
-		if action != config.Actions.ScaleUp {
-			reward += config.Rewards.MockRamHighLoad * severityRam
-		} else {
-			reward += config.Rewards.MockIdeal // סוכריה על כך שהוא מטפל בבעיה
-		}
-	}
-
-	// waste of resources
-	if cpuBucket <= config.LogicConstants.LowLoadThreshold && ramBucket <= config.LogicConstants.LowLoadThreshold && replicas >= 8 {
-		reward += config.Rewards.MockWaste
-	}
-
-	// reset penalty
-	if action == config.Actions.Restart {
-		reward += config.Rewards.MockRestartPenalty
-	}
-
-	return reward
-}
-
 func scaleDeployment(clientset *kubernetes.Clientset, namespace string, deploymentName string, change int32) {
 	deploymentsClient := clientset.AppsV1().Deployments(namespace)
 
@@ -216,7 +158,6 @@ func scaleDeployment(clientset *kubernetes.Clientset, namespace string, deployme
 }
 
 func getRealCPULoad(metricsClient *metricsv.Clientset, namespace string, labelSelector string, podCount int, maxCpuMilli float64) float64 {
-	// הוספנו את maxCpuMilli כפרמטר והגנו מפני חלוקה באפס
 	if podCount == 0 || maxCpuMilli == 0 {
 		return 0.0
 	}
@@ -296,9 +237,6 @@ func main() {
 	}
 	fmt.Println("Configuration loaded from Zookeeper successfully")
 
-	// initialize configuration and clientset to interact with Kubernetes API
-	// located in user's home directory: home/.kube/config
-
 	var kubeconfig *string
 	if home := homedir.HomeDir(); home != "" {
 		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
@@ -339,9 +277,8 @@ func main() {
 			currentPodCount = config.SystemLimits.MinPods
 		}
 
-		// Dynamically fetch the pod memory and CPU limits
-		var podMemoryLimit float64 = 512 * 1024 * 1024 // Fallback 512MB
-		var podCpuLimit float64 = 500                  // Fallback 500m
+		var podMemoryLimit float64 = 512 * 1024 * 1024
+		var podCpuLimit float64 = 500
 
 		if len(pods.Items) > 0 && len(pods.Items[0].Spec.Containers) > 0 {
 			memLimit := pods.Items[0].Spec.Containers[0].Resources.Limits.Memory().Value()
@@ -355,10 +292,37 @@ func main() {
 			}
 		}
 
-		// Fetch CPU and RAM metrics as clean 0-100% percentages
 		realCpu := getRealCPULoad(metricsClient, targetNamespace, targetLabel, currentPodCount, podCpuLimit)
 		realRam := getRealRAMLoad(metricsClient, targetNamespace, targetLabel, currentPodCount, podMemoryLimit)
 
+		loadResp, err := http.Get(brainURL + "/is-load-active")
+		simulateLoad := false
+		if err == nil {
+			var loadData struct {
+				Active bool `json:"active"`
+			}
+			json.NewDecoder(loadResp.Body).Decode(&loadData)
+			simulateLoad = loadData.Active
+			loadResp.Body.Close()
+		}
+
+		if simulateLoad {
+			totalTrafficCpu := 500.0
+			totalTrafficRam := 300.0
+
+			dynamicCpu := totalTrafficCpu / float64(currentPodCount)
+			dynamicRam := totalTrafficRam / float64(currentPodCount)
+
+			realCpu += dynamicCpu
+			realRam += dynamicRam
+
+			if realCpu > 100.0 {
+				realCpu = 100.0
+			}
+			if realRam > 100.0 {
+				realRam = 95.0
+			}
+		}
 		isCrashed := false
 		for _, pod := range pods.Items {
 			if pod.Status.Phase == "Failed" || pod.Status.Phase == "Unknown" {
@@ -366,7 +330,6 @@ func main() {
 			}
 		}
 
-		// Prepare State Payload for FastAPI
 		state := ClusterState{
 			PodCount:  currentPodCount,
 			CpuUsage:  realCpu,
@@ -425,7 +388,6 @@ func main() {
 
 		time.Sleep(time.Duration(config.SystemLimits.LoopDelaySeconds) * time.Second)
 
-		// Get state AFTER the action was performed
 		newPodsList, _ := clientset.CoreV1().Pods(targetNamespace).List(apiContext.TODO(), metav1.ListOptions{
 			LabelSelector: targetLabel,
 		})
@@ -437,34 +399,33 @@ func main() {
 		newRealCpu := getRealCPULoad(metricsClient, targetNamespace, targetLabel, newPodCount, podCpuLimit)
 		newRealRam := getRealRAMLoad(metricsClient, targetNamespace, targetLabel, newPodCount, podMemoryLimit)
 
-		var reward float64
-		done := false
-
-		// בדיקת קריסה קטסטרופלית (כדי להתאים ללוגיקה של הסימולטור)
-		cpuB := getBucket(realCpu)
-		ramB := getBucket(realRam)
-		isCatastrophic := isCrashed || ((cpuB >= config.MetricsConfig.NumBuckets-2 || ramB >= config.MetricsConfig.NumBuckets-2) && currentPodCount <= 2 && actionID != config.Actions.ScaleUp)
-
-		if isCatastrophic {
-			reward = -2000.0 // העונש המפלצתי כדי למנוע האקינג
-			done = true
-			fmt.Println("CATASTROPHIC FAILURE DETECTED! Sending massive penalty.")
-		} else if limitHit {
-			reward = config.Rewards.Bad
-		} else {
-			reward = calculateReward(realCpu, realRam, currentPodCount, actionID)
+		criticalOffset := config.LogicConstants.CriticalLoadOffset
+		if criticalOffset == 0 { 
+			criticalOffset = 2 
+		}
+		criticalMinPods := config.LogicConstants.CriticalMinPods
+		if criticalMinPods == 0 { 
+			criticalMinPods = 2 
 		}
 
-		// Prepare Training Payload
+		cpuB := getBucket(realCpu)
+		ramB := getBucket(realRam)
+		
+		done := isCrashed || limitHit || ((cpuB >= config.MetricsConfig.NumBuckets-criticalOffset || ramB >= config.MetricsConfig.NumBuckets-criticalOffset) && currentPodCount <= criticalMinPods && actionID != config.Actions.ScaleUp)
+
+		if done {
+			fmt.Println("WARNING: System Failure or Limit Hit detected. Notifying Brain.")
+		}
+
 		trainData := LearnRequest{
 			State:     StateRequest{CpuPercentage: realCpu, RamPercentage: realRam, Replicas: currentPodCount},
 			Action:    actionID,
-			Reward:    reward,
 			NextState: StateRequest{CpuPercentage: newRealCpu, RamPercentage: newRealRam, Replicas: newPodCount},
-			Done:      done, // עכשיו זה שולח True אם השרת קרס!
+			Done:      done,
 		}
 
 		trainJson, _ := json.Marshal(trainData)
 		http.Post(brainURL+"/train", "application/json", bytes.NewBuffer(trainJson))
-		fmt.Printf("Trained: Reward %.1f sent to brain.\n", reward)
+		fmt.Printf("Train event sent to Brain (Action: %d, Done: %t).\n", actionID, done)
+	}
 }
