@@ -57,6 +57,8 @@ type LogicConstants struct {
 	MinLevel        int `json:"min_level"`
 	IdealCpuLevel   int `json:"ideal_cpu_level"`
 	IdealRamLevel   int `json:"ideal_ram_level"`
+	HighLoadThreshold int `json:"high_load_threshold"`
+	LowLoadThreshold  int `json:"low_load_threshold"`
 }
 
 type AppConfig struct {
@@ -147,16 +149,30 @@ func calculateReward(cpuPercent float64, ramPercent float64, replicas int, actio
 		reward += config.Rewards.MockIdeal
 	}
 
-	// high load
-	if cpuBucket >= config.MetricsConfig.NumBuckets-2 {
-		reward += config.Rewards.MockHighLoad
+	highLoadThreshold := config.LogicConstants.HighLoadThreshold
+
+	// CPU High Load Logic (Gradient + Waive Penalty)
+	if cpuBucket >= highLoadThreshold {
+		severityCpu := float64((cpuBucket - highLoadThreshold) + 1)
+		if action != config.Actions.ScaleUp {
+			reward += config.Rewards.MockCpuHighLoad * severityCpu
+		} else {
+			reward += config.Rewards.MockIdeal
+		}
 	}
-	if ramBucket >= config.MetricsConfig.NumBuckets-3 {
-		reward += config.Rewards.MockHighLoad * 2
+
+	// RAM High Load Logic (Gradient + Waive Penalty)
+	if ramBucket >= highLoadThreshold {
+		severityRam := float64((ramBucket - highLoadThreshold) + 1)
+		if action != config.Actions.ScaleUp {
+			reward += config.Rewards.MockRamHighLoad * severityRam
+		} else {
+			reward += config.Rewards.MockIdeal // סוכריה על כך שהוא מטפל בבעיה
+		}
 	}
 
 	// waste of resources
-	if cpuBucket <= config.LogicConstants.MinLevel && replicas >= config.SystemLimits.MaxPods-2 {
+	if cpuBucket <= config.LogicConstants.LowLoadThreshold && ramBucket <= config.LogicConstants.LowLoadThreshold && replicas >= 8 {
 		reward += config.Rewards.MockWaste
 	}
 
@@ -422,23 +438,33 @@ func main() {
 		newRealRam := getRealRAMLoad(metricsClient, targetNamespace, targetLabel, newPodCount, podMemoryLimit)
 
 		var reward float64
-		if limitHit {
+		done := false
+
+		// בדיקת קריסה קטסטרופלית (כדי להתאים ללוגיקה של הסימולטור)
+		cpuB := getBucket(realCpu)
+		ramB := getBucket(realRam)
+		isCatastrophic := isCrashed || ((cpuB >= config.MetricsConfig.NumBuckets-2 || ramB >= config.MetricsConfig.NumBuckets-2) && currentPodCount <= 2 && actionID != config.Actions.ScaleUp)
+
+		if isCatastrophic {
+			reward = -2000.0 // העונש המפלצתי כדי למנוע האקינג
+			done = true
+			fmt.Println("CATASTROPHIC FAILURE DETECTED! Sending massive penalty.")
+		} else if limitHit {
 			reward = config.Rewards.Bad
 		} else {
 			reward = calculateReward(realCpu, realRam, currentPodCount, actionID)
 		}
 
-		// Prepare Training Payload (With RAM and CPU percentages)
+		// Prepare Training Payload
 		trainData := LearnRequest{
 			State:     StateRequest{CpuPercentage: realCpu, RamPercentage: realRam, Replicas: currentPodCount},
 			Action:    actionID,
 			Reward:    reward,
 			NextState: StateRequest{CpuPercentage: newRealCpu, RamPercentage: newRealRam, Replicas: newPodCount},
-			Done:      false,
+			Done:      done, // עכשיו זה שולח True אם השרת קרס!
 		}
 
 		trainJson, _ := json.Marshal(trainData)
 		http.Post(brainURL+"/train", "application/json", bytes.NewBuffer(trainJson))
 		fmt.Printf("Trained: Reward %.1f sent to brain.\n", reward)
-	}
 }

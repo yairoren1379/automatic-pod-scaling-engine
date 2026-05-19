@@ -68,6 +68,8 @@ def setup_zookeeper_config():
             "ideal_ram_level": 16,              # Bucket 16 represents ~48-50%
             "initial_cpu_percentage": 50,
             "initial_ram_percentage": 50,
+            "high_load_threshold": 24,
+            "low_load_threshold": 8,
             "ideal_replicas": 1,
             "initial_replicas": 1,
             "initial_step_count": 0,

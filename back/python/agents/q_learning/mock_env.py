@@ -99,7 +99,7 @@ class MockKubernetesEnv:
             
         if is_in_high_load:
             if action == APP_CONFIG["actions"]["scale_up"]:
-                reward += APP_CONFIG["rewards"]["mock_ideal"] * 5
+                reward += APP_CONFIG["rewards"]["mock_ideal"] * 10
 
         waste_threshold = 7
         # waste of resources
