@@ -22,7 +22,6 @@ def train_system():
 
     for state_idx in range(num_states):
         current_pods = (state_idx % valid_pod_states) + min_pods
-        
         allowed_for_this_state = all_possible_actions.copy()
         
         if current_pods <= min_pods and APP_CONFIG["actions"]["scale_down"] in allowed_for_this_state:
@@ -31,7 +30,6 @@ def train_system():
         if current_pods >= max_pods and APP_CONFIG["actions"]["scale_up"] in allowed_for_this_state:
             allowed_for_this_state.remove(APP_CONFIG["actions"]["scale_up"])
             
-
         for action in all_possible_actions:
             if action not in allowed_for_this_state:
                 agent.q_table[state_idx][action] = -1e9
@@ -39,15 +37,23 @@ def train_system():
     safety_bandit = SafetyBandit(num_states=num_states, arms_count=num_actions)
 
     print("Start Training Session")
-    NUM_EPISODES = APP_CONFIG["rl_hyperparameters"]["num_episodes"]
+    
+    alpha_val = APP_CONFIG["rl_hyperparameters"]["alpha"]
     
     episodes_history = []
     rewards_history = []
-    total_count = 0
     count_with_epsilon_above_min = 0
-    count_with_epsilon_below_min = 0
 
-    for episode in range(NUM_EPISODES):
+    recent_rewards = []
+    window_size = 1000 
+    
+    convergence_threshold = 0.5 * alpha_val
+    print(f"Dynamic Convergence Threshold set to: {convergence_threshold:.3f} (based on Alpha: {alpha_val})")
+    
+    previous_window_avg = None
+
+    episode = 0
+    while True:
         state = env.reset()
         done = False
         total_reward = 0
@@ -81,32 +87,54 @@ def train_system():
             total_reward += reward
         
         agent.decay_epsilon()
-        total_count += 1
         if(agent.epsilon > APP_CONFIG["rl_hyperparameters"]["epsilon_min"]):
-            count_with_epsilon_above_min +=1
-        else:
-            count_with_epsilon_below_min +=1
+            count_with_epsilon_above_min += 1
             
+        rewards_history.append(total_reward)
+        episodes_history.append(episode + 1)
+        
+        recent_rewards.append(total_reward)
+        if len(recent_rewards) > window_size:
+            recent_rewards.pop(0)
+
         if (episode + 1) % 100 == 0:
             print(f"Episode {episode + 1}: Avg Reward: {total_reward:.2f}")
-            episodes_history.append(episode + 1)
-            rewards_history.append(total_reward)
+
+        if (episode + 1) % 5000 == 0 and len(recent_rewards) == window_size:
+            current_window_avg = np.mean(recent_rewards)
+            
+            if previous_window_avg is not None:
+                reward_diff = abs(current_window_avg - previous_window_avg)
+                print(f"--- Episode {episode+1}: Current Avg: {current_window_avg:.2f}, Prev Avg: {previous_window_avg:.2f}, Diff: {reward_diff:.4f} ---")
+                
+                if reward_diff < convergence_threshold:
+                    print("Reward convergence detected! Stopping training.")
+                    break
+                    
+            previous_window_avg = current_window_avg
+            
+        episode += 1
 
     print("Training Finished!")
     print("------------------------------------")
     print("epsilon:", agent.epsilon)
-    print("Total episodes:", total_count)
+    print("Total episodes ran:", episode + 1)
     print("Episodes with epsilon > min:", count_with_epsilon_above_min)
-    print("Episodes with epsilon < min:", count_with_epsilon_below_min)
+    print("Episodes with epsilon < min:", (episode + 1) - count_with_epsilon_above_min)
     print("------------------------------------")
 
+    gamma_val = APP_CONFIG["rl_hyperparameters"]["gamma"]
+    decay_val = APP_CONFIG["rl_hyperparameters"]["epsilon_decay"]
     
     plt.figure(figsize=(10, 5))
     plt.plot(episodes_history, rewards_history, alpha=0.3, label='Raw Reward')
+    
     window = 50
-    moving_avg = np.convolve(rewards_history, np.ones(window)/window, mode='valid')
-    plt.plot(episodes_history[window-1:], moving_avg, color='red', label='Moving Avg')
-    plt.title('Learning Curve')
+    if len(rewards_history) >= window:
+        moving_avg = np.convolve(rewards_history, np.ones(window)/window, mode='valid')
+        plt.plot(episodes_history[window-1:], moving_avg, color='red', label='Moving Avg')
+    
+    plt.title(f'Learning Curve\nAlpha: {alpha_val} | Gamma: {gamma_val} | Epsilon Decay: {decay_val}\nStop Diff: {convergence_threshold:.3f}')
     plt.xlabel('Episodes')
     plt.ylabel('Reward')
     plt.legend()
@@ -124,7 +152,7 @@ def train_system():
     action_names = {v: k for k, v in APP_CONFIG["actions"].items()}
     with open("api/brain_readable.txt", "w") as f:
         f.write("--- Q-Learning Final Report ---\n")
-        f.write(f"Total Episodes: {NUM_EPISODES}\n")
+        f.write(f"Total Episodes: {episode + 1}\n")
         f.write("-----------------------------\n\n")
         
         for state_idx, q_values in enumerate(agent.q_table):

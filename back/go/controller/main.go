@@ -400,12 +400,12 @@ func main() {
 		newRealRam := getRealRAMLoad(metricsClient, targetNamespace, targetLabel, newPodCount, podMemoryLimit)
 
 		criticalOffset := config.LogicConstants.CriticalLoadOffset
-		if criticalOffset == 0 { 
-			criticalOffset = 2 
+		if criticalOffset == 0 {
+			criticalOffset = 2
 		}
 		criticalMinPods := config.LogicConstants.CriticalMinPods
-		if criticalMinPods == 0 { 
-			criticalMinPods = 2 
+		if criticalMinPods == 0 {
+			criticalMinPods = 2
 		}
 
 		cpuB := getBucket(realCpu)

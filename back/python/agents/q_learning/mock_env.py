@@ -3,7 +3,7 @@ import random
 from typing import Tuple
 from config_loader import APP_CONFIG
 
-def calculate_reward(cpu_bucket: int, ram_bucket: int, replicas: int, action: int, done: bool = False) -> float:
+def calculate_reward(cpu_bucket: int, ram_bucket: int, replicas: int, action: int, last_action: int = None, done: bool = False) -> float:
     if done:
         return APP_CONFIG["rl_hyperparameters"].get("catastrophic_penalty", -2000.0)
 
@@ -29,11 +29,41 @@ def calculate_reward(cpu_bucket: int, ram_bucket: int, replicas: int, action: in
             reward += APP_CONFIG["rewards"]["mock_ideal"]
 
     waste_threshold = APP_CONFIG["logic_constants"].get("low_load_threshold", 7)
-    if cpu_bucket <= waste_threshold and ram_bucket <= waste_threshold and replicas >= 8:
-        reward += APP_CONFIG["rewards"]["mock_waste"]
+    min_pods = APP_CONFIG["system_limits"].get("min_pods", 1)
+    
+    if cpu_bucket <= waste_threshold and ram_bucket <= waste_threshold and replicas > min_pods:
+        
+        severity_waste = (waste_threshold - max(cpu_bucket, ram_bucket)) + 1
+        if action == APP_CONFIG["actions"]["scale_up"]:
+            reward += APP_CONFIG["rewards"]["mock_waste"] * severity_waste * 3.0
+        elif action == APP_CONFIG["actions"]["scale_down"]:
+            reward += APP_CONFIG["rewards"]["mock_ideal"]
+        else:
+            reward += APP_CONFIG["rewards"]["mock_waste"] * severity_waste
+
 
     if action == APP_CONFIG["actions"]["restart"]:
         reward += APP_CONFIG["rewards"]["mock_restart_penalty"]
+    
+    if last_action is not None:
+        is_ping_pong = False
+        if action == APP_CONFIG["actions"]["scale_up"] and last_action == APP_CONFIG["actions"]["scale_down"]:
+            is_ping_pong = True
+        elif action == APP_CONFIG["actions"]["scale_down"] and last_action == APP_CONFIG["actions"]["scale_up"]:
+            is_ping_pong = True
+            
+        if is_ping_pong:
+            high_load = APP_CONFIG["logic_constants"].get("high_load_threshold", 24)
+            low_load = APP_CONFIG["logic_constants"].get("low_load_threshold", 7)
+            
+            is_emergency_up = (action == APP_CONFIG["actions"]["scale_up"] and cpu_bucket >= high_load)
+            is_emergency_down = (action == APP_CONFIG["actions"]["scale_down"] and cpu_bucket <= low_load)
+            
+            if is_emergency_up or is_emergency_down:
+                pass
+            else:
+                # העומס סביר או לא השתנה מהותית - זה סתם חוסר החלטיות. קנס!
+                reward += APP_CONFIG["rewards"].get("mock_thrashing_penalty", -500.0)
 
     return reward
 

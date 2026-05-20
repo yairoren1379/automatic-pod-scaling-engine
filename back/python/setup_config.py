@@ -28,7 +28,7 @@ def setup_zookeeper_config():
             "alpha": 0.1,           # how fast the agent learns
             "gamma": 0.99,          # how much future rewards are valued
             "epsilon_min": 0.05,     # minimum exploration rate
-            "epsilon_decay": 0.99995,  # rate at which epsilon decays
+            "epsilon_decay": 0.999985,  # rate at which epsilon decays
             "max_steps": 100,
             "q_value_init": 0.0,
             "catastrophic_penalty": -500.0
@@ -43,7 +43,8 @@ def setup_zookeeper_config():
             "mock_cpu_high_load": -8.0,
             "mock_ram_high_load": -12.0,
             "mock_waste": -2.0,
-            "mock_restart_penalty": -1.0
+            "mock_restart_penalty": -1.0,
+            "mock_thrashing_penalty": -500.0
         },
 
         "actions": {

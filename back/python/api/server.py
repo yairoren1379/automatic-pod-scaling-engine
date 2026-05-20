@@ -41,6 +41,8 @@ last_system_status = {
 
 brain_logs_buffer = []
 
+previous_action_id = None
+
 def add_log(msg: str):
     print(msg)
     brain_logs_buffer.append(msg)
@@ -234,7 +236,7 @@ step_counter = 0
 
 @app.post("/train")
 def update_agent(req: LearnRequest):
-    global step_counter, system_resting
+    global step_counter, system_resting, previous_action_id
     if system_resting:
         return {"status": "resting, skipped training"}
     
@@ -249,7 +251,15 @@ def update_agent(req: LearnRequest):
     next_ram_bucket = get_bucket(req.next_state.ram_percentage)
     next_state_idx = encode_state(next_cpu_bucket, next_ram_bucket, next_replicas)
 
-    calculated_reward = calculate_reward(cpu_bucket, ram_bucket, current_replicas, req.action, req.done)
+    calculated_reward = calculate_reward(
+        cpu_bucket,
+        ram_bucket,
+        current_replicas,
+        req.action,
+        previous_action_id,
+        req.done)
+    
+    previous_action_id = req.action
 
     agent.updateAction(state=state_idx, action=req.action, reward=calculated_reward, next_state=next_state_idx, done=req.done)
     last_system_status["reward"] = calculated_reward
