@@ -22,8 +22,6 @@ from agents.bandit.bandit_safety import SafetyBandit
 
 from agents.q_learning.mock_env import calculate_reward
 
-from history_db import log_run
-
 app = FastAPI(title="K8s RL Learning Engine")
 
 app.add_middleware(
@@ -266,11 +264,6 @@ def update_agent(req: LearnRequest):
     
     is_catastrophic = calculated_reward <= APP_CONFIG["rl_hyperparameters"].get("catastrophic_penalty", -10.0)
     new_q_val = agent.q_table[state_idx][req.action]
-    
-    try:
-        log_run(state=state_idx, action=req.action, reward=calculated_reward, is_catastrophic=is_catastrophic, new_q_value=new_q_val)
-    except Exception as e:
-        add_log(f"[DB ERROR] Failed to save to database: {e}")
     
     step_counter += 1
     if step_counter % 2 == 0:
