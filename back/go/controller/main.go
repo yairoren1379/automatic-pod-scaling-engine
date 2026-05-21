@@ -157,63 +157,49 @@ func scaleDeployment(clientset *kubernetes.Clientset, namespace string, deployme
 	}
 }
 
-func getRealCPULoad(metricsClient *metricsv.Clientset, namespace string, labelSelector string, podCount int, maxCpuMilli float64) float64 {
-	if podCount == 0 || maxCpuMilli == 0 {
-		return 0.0
+func getRealMetrics(metricsClient *metricsv.Clientset, namespace string, labelSelector string, podCount int, maxCpuMilli float64, maxMemoryBytes float64) (float64, float64) {
+	if podCount == 0 {
+		return 0.0, 0.0
 	}
 
-	podMetricsList, err := metricsClient.MetricsV1beta1().PodMetricses(namespace).List(apiContext.TODO(), metav1.ListOptions{
+	podMetricsList, err := metricsClient.MetricsV1beta1().PodMetricses(namespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: labelSelector,
 	})
+	
 	if err != nil {
-		fmt.Printf("Warning: Failed to get CPU metrics: %v\n", err)
-		return 0.0
+		fmt.Printf("Warning: Failed to get metrics: %v\n", err)
+		return 0.0, 0.0
 	}
 
 	var totalCpuMilli int64 = 0
+	var totalMemoryBytes int64 = 0
+
 	for _, podMetric := range podMetricsList.Items {
 		for _, container := range podMetric.Containers {
 			totalCpuMilli += container.Usage.Cpu().MilliValue()
-		}
-	}
-
-	avgCpuMilli := float64(totalCpuMilli) / float64(podCount)
-
-	percentage := (avgCpuMilli / maxCpuMilli) * 100.0
-
-	if percentage > 100.0 {
-		percentage = 100.0
-	}
-	return percentage
-}
-
-func getRealRAMLoad(metricsClient *metricsv.Clientset, namespace string, labelSelector string, podCount int, maxMemoryBytes float64) float64 {
-	if podCount == 0 || maxMemoryBytes == 0 {
-		return 0.0
-	}
-
-	podMetricsList, err := metricsClient.MetricsV1beta1().PodMetricses(namespace).List(apiContext.TODO(), metav1.ListOptions{
-		LabelSelector: labelSelector,
-	})
-	if err != nil {
-		fmt.Printf("Warning: Failed to get RAM metrics: %v\n", err)
-		return 0.0
-	}
-
-	var totalMemoryBytes int64 = 0
-	for _, podMetric := range podMetricsList.Items {
-		for _, container := range podMetric.Containers {
 			totalMemoryBytes += container.Usage.Memory().Value()
 		}
 	}
 
-	avgMemoryBytes := float64(totalMemoryBytes) / float64(podCount)
-	percentage := (avgMemoryBytes / maxMemoryBytes) * 100.0
-
-	if percentage > 100.0 {
-		percentage = 100.0
+	var cpuPercentage float64 = 0.0
+	if maxCpuMilli > 0 {
+		avgCpuMilli := float64(totalCpuMilli) / float64(podCount)
+		cpuPercentage = (avgCpuMilli / maxCpuMilli) * 100.0
+		if cpuPercentage > 100.0 {
+			cpuPercentage = 100.0
+		}
 	}
-	return percentage
+
+	var ramPercentage float64 = 0.0
+	if maxMemoryBytes > 0 {
+		avgMemoryBytes := float64(totalMemoryBytes) / float64(podCount)
+		ramPercentage = (avgMemoryBytes / maxMemoryBytes) * 100.0
+		if ramPercentage > 100.0 {
+			ramPercentage = 100.0
+		}
+	}
+
+	return cpuPercentage, ramPercentage
 }
 
 func getEnv(key, fallback string) string {
@@ -292,8 +278,8 @@ func main() {
 			}
 		}
 
-		realCpu := getRealCPULoad(metricsClient, targetNamespace, targetLabel, currentPodCount, podCpuLimit)
-		realRam := getRealRAMLoad(metricsClient, targetNamespace, targetLabel, currentPodCount, podMemoryLimit)
+		
+		realCpu, realRam := getRealMetrics(metricsClient, targetNamespace, targetLabel, currentPodCount, podCpuLimit, podMemoryLimit)
 
 		loadResp, err := http.Get(brainURL + "/is-load-active")
 		simulateLoad := false
@@ -396,8 +382,7 @@ func main() {
 			newPodCount = config.SystemLimits.MinPods
 		}
 
-		newRealCpu := getRealCPULoad(metricsClient, targetNamespace, targetLabel, newPodCount, podCpuLimit)
-		newRealRam := getRealRAMLoad(metricsClient, targetNamespace, targetLabel, newPodCount, podMemoryLimit)
+		newRealCpu, newRealRam := getRealMetrics(metricsClient, targetNamespace, targetLabel, newPodCount, podCpuLimit, podMemoryLimit)
 
 		criticalOffset := config.LogicConstants.CriticalLoadOffset
 		if criticalOffset == 0 {
