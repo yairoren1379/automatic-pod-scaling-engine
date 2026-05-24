@@ -45,15 +45,16 @@ def train_system():
     count_with_epsilon_above_min = 0
 
     recent_rewards = []
-    window_size = 1000 
+    window_size = 1000
     
-    convergence_threshold = 0.5 * alpha_val
+    convergence_threshold = APP_CONFIG["rl_hyperparameters"]["convergence_threshold"]
     print(f"Dynamic Convergence Threshold set to: {convergence_threshold:.3f} (based on Alpha: {alpha_val})")
     
     previous_window_avg = None
+    reward_diff = float('inf')
 
     episode = 0
-    while True:
+    while reward_diff > convergence_threshold:
         state = env.reset()
         done = False
         total_reward = 0
@@ -106,10 +107,6 @@ def train_system():
             if previous_window_avg is not None:
                 reward_diff = abs(current_window_avg - previous_window_avg)
                 print(f"--- Episode {episode+1}: Current Avg: {current_window_avg:.2f}, Prev Avg: {previous_window_avg:.2f}, Diff: {reward_diff:.4f} ---")
-                
-                if reward_diff < convergence_threshold:
-                    print("Reward convergence detected! Stopping training.")
-                    break
                     
             previous_window_avg = current_window_avg
             
