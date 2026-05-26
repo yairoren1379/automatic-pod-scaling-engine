@@ -16,7 +16,7 @@ spec:
       - name: python-container
         image: alpine:latest
         imagePullPolicy: IfNotPresent
-        command: ["/bin/sh", "-c", "awk 'BEGIN { for(i=0;i<1500000;i++) a[i]=\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"; while(1) {} }'"]
+        command: ["/bin/sh", "-c", "sleep infinity"]
         resources:
           requests:
             cpu: "100m"

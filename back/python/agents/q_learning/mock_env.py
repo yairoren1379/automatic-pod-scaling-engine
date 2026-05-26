@@ -8,10 +8,10 @@ def calculate_reward(cpu_bucket: int, ram_bucket: int, replicas: int, action: in
     ideal_cpu = APP_CONFIG["logic_constants"]["ideal_cpu_level"]
     ideal_ram = APP_CONFIG["logic_constants"]["ideal_ram_level"]
     ideal_replicas = APP_CONFIG["logic_constants"]["ideal_replicas"]
-    high_threshold = APP_CONFIG["logic_constants"].get("high_load_threshold", 24)
-    waste_threshold = APP_CONFIG["logic_constants"].get("low_load_threshold", 7)
+    high_threshold = APP_CONFIG["logic_constants"]["high_load_threshold"]
+    waste_threshold = APP_CONFIG["logic_constants"]["low_load_threshold"]
     
-    min_pods = APP_CONFIG["system_limits"].get("min_pods", 1)
+    min_pods = APP_CONFIG["system_limits"]["min_pods"]
     
     action_scale_up = APP_CONFIG["actions"]["scale_up"]
     action_scale_down = APP_CONFIG["actions"]["scale_down"]
@@ -22,8 +22,8 @@ def calculate_reward(cpu_bucket: int, ram_bucket: int, replicas: int, action: in
     penalty_cpu_high = APP_CONFIG["rewards"]["mock_cpu_high_load"]
     penalty_ram_high = APP_CONFIG["rewards"]["mock_ram_high_load"]
     penalty_restart = APP_CONFIG["rewards"]["mock_restart_penalty"]
-    penalty_thrashing = APP_CONFIG["rewards"].get("mock_thrashing_penalty", -500.0)
-    penalty_catastrophic = APP_CONFIG["rl_hyperparameters"].get("catastrophic_penalty", -2000.0)
+    penalty_thrashing = APP_CONFIG["rewards"]["mock_thrashing_penalty"]
+    penalty_catastrophic = APP_CONFIG["rl_hyperparameters"]["catastrophic_failure_penalty"]
     
     if done:
         return penalty_catastrophic
@@ -113,8 +113,8 @@ class MockKubernetesEnv:
         if action == APP_CONFIG["actions"]["scale_up"] and self.replicas >= self.max_pods:
             return True
             
-        critical_offset = APP_CONFIG["logic_constants"].get("critical_load_offset", 2)
-        critical_min_pods = APP_CONFIG["logic_constants"].get("critical_min_pods", 2)
+        critical_offset = APP_CONFIG["logic_constants"]["critical_load_offset"]
+        critical_min_pods = APP_CONFIG["logic_constants"]["critical_min_pods"]
         
         if (self.cpu_bucket >= self.num_buckets - critical_offset or self.ram_bucket >= self.num_buckets - critical_offset) and self.replicas <= critical_min_pods:
             if action != APP_CONFIG["actions"]["scale_up"]:
