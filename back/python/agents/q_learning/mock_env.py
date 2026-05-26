@@ -1,4 +1,4 @@
-#train and chack q-learning agent in a mock kubernetes environment
+#train and check q-learning agent in a mock kubernetes environment
 import random
 from typing import Tuple
 from config_loader import APP_CONFIG
