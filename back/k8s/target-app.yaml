@@ -1,0 +1,67 @@
+# The service the autoscaler manages (source: back/go/targetapp).
+# Build the image inside Minikube first: scripts/setup-minikube.ps1
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yair-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: yair-api
+  template:
+    metadata:
+      labels:
+        app: yair-api
+    spec:
+      containers:
+      - name: api
+        image: yair-api:latest
+        imagePullPolicy: Never          # built locally into Minikube's Docker
+        ports:
+        - containerPort: 8080
+        env:
+        - name: WORK_MS                 # CPU per request: ~100 requests/s per pod at 200m
+          value: "2"
+        - name: BASE_LATENCY_MS         # simulated downstream call
+          value: "20"
+        - name: INFLIGHT_KB_PER_REQUEST # held while a request runs: memory climbs when requests queue
+          value: "512"
+        - name: CACHE_KB_PER_REQUEST    # kept after a request: memory grows with requests/s per pod
+          value: "128"
+        - name: CACHE_TTL_SECONDS
+          value: "10"
+        - name: MAX_IN_FLIGHT           # beyond this, requests are rejected with 503
+          value: "200"
+        - name: GOMEMLIMIT              # GC works harder near the limit -> latency rises
+          value: "220MiB"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "200m"
+            memory: "256Mi"             # 15 pods x 256Mi fit in a 6GB Minikube
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yair-api
+spec:
+  selector:
+    app: yair-api
+  ports:
+  - port: 8080
+    targetPort: 8080

@@ -1,0 +1,14 @@
+# Install PyTorch first, CPU build:
+#   pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+# Pinned because Windows Smart App Control blocks torch 2.14.1's shm.dll (a new file with no
+# reputation yet), so `import torch` fails on the development machine. 2.13.0 loads fine.
+torch==2.13.0
+numpy
+matplotlib
+kazoo
+fastapi
+uvicorn
+websockets      # WebSocket support for uvicorn (live dashboard)
+# tests
+pytest
+httpx

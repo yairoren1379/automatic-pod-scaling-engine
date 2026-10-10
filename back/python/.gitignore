@@ -1,0 +1,6 @@
+__pycache__/
+.venv/
+# Training outputs: checkpoints, replay buffers, metrics and plots of every run
+runs/
+# Runtime data of the API server: metrics CSV, audit log, online checkpoints
+data/

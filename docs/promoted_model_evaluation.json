@@ -1,0 +1,68 @@
+{
+  "constant": {
+    "dqn": {
+      "total_reward": -54.216190570068065,
+      "severe_failures": 0.5,
+      "slo_violation_percent": 0.475,
+      "avg_latency_ms": 27.985746207075188,
+      "avg_replicas": 11.98125,
+      "scale_actions": 17.5,
+      "flaps": 1.25,
+      "blocked_actions": 0.5
+    },
+    "threshold": {
+      "total_reward": -249.69195124415342,
+      "severe_failures": 2.55,
+      "slo_violation_percent": 1.55,
+      "avg_latency_ms": 48.226003161357504,
+      "avg_replicas": 8.99625,
+      "scale_actions": 3.8,
+      "flaps": 0.0,
+      "blocked_actions": 0.0
+    }
+  },
+  "spike": {
+    "dqn": {
+      "total_reward": -423.72425423177754,
+      "severe_failures": 4.2,
+      "slo_violation_percent": 2.4,
+      "avg_latency_ms": 54.24371493488947,
+      "avg_replicas": 12.662749999999999,
+      "scale_actions": 23.8,
+      "flaps": 1.85,
+      "blocked_actions": 0.75
+    },
+    "threshold": {
+      "total_reward": -656.1040210145759,
+      "severe_failures": 6.55,
+      "slo_violation_percent": 3.725,
+      "avg_latency_ms": 75.41586503421017,
+      "avg_replicas": 11.021,
+      "scale_actions": 6.55,
+      "flaps": 0.0,
+      "blocked_actions": 0.0
+    }
+  },
+  "periodic": {
+    "dqn": {
+      "total_reward": -166.074338502201,
+      "severe_failures": 1.55,
+      "slo_violation_percent": 1.15,
+      "avg_latency_ms": 34.60925671900418,
+      "avg_replicas": 11.687750000000001,
+      "scale_actions": 44.35,
+      "flaps": 0.85,
+      "blocked_actions": 0.35
+    },
+    "threshold": {
+      "total_reward": -375.9714120692869,
+      "severe_failures": 3.7,
+      "slo_violation_percent": 2.45,
+      "avg_latency_ms": 54.77475198950452,
+      "avg_replicas": 9.8025,
+      "scale_actions": 7.3,
+      "flaps": 0.0,
+      "blocked_actions": 0.0
+    }
+  }
+}

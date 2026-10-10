@@ -1,0 +1,69 @@
+# Single-node ZooKeeper for the autoscaler's configuration (development only).
+# Reach it from the host with: kubectl port-forward svc/zookeeper 2181:2181
+#
+# Its data lives on a PersistentVolumeClaim (Minikube's default storage class), so the
+# configuration (mode, hyperparameters, guardrails) survives pod restarts and `minikube stop`.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: zookeeper-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zookeeper
+spec:
+  replicas: 1
+  # Stop the old pod before starting a new one: two ZooKeeper servers must never write the same
+  # data directory. (rollingUpdate: null removes the default when updating an older Deployment.)
+  strategy:
+    type: Recreate
+    rollingUpdate: null
+  selector:
+    matchLabels:
+      app: zookeeper
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+    spec:
+      containers:
+      - name: zookeeper
+        image: zookeeper:3.9
+        ports:
+        - containerPort: 2181
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        # Snapshots (/data) and transaction logs (/datalog): both are needed to restore the ZNodes.
+        volumeMounts:
+        - name: data
+          mountPath: /data
+          subPath: data
+        - name: data
+          mountPath: /datalog
+          subPath: datalog
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: zookeeper-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper
+spec:
+  selector:
+    app: zookeeper
+  ports:
+  - port: 2181
+    targetPort: 2181

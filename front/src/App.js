@@ -1,200 +1,117 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import './App.css';
+import { API_URL } from './api';
+import useLiveFeed from './useLiveFeed';
+import LiveView from './views/LiveView';
+import TrainingView from './views/TrainingView';
+import ControlView from './views/ControlView';
 
-function App() {
-  const [status, setStatus] = useState({
-    pods: 0,
-    cpu_usage: 0.0,
-    ram_usage: 0.0,
-    cpu_bucket: 0,
-    ram_bucket: 0,
-    action: "Waiting...",
-    reward: 0.0,
-    q_values: [0, 0, 0, 0]
+const TABS = [
+  { id: 'live', label: 'Live dashboard' },
+  { id: 'training', label: 'Training analytics' },
+  { id: 'control', label: 'Simulation & control' },
+];
+
+const THEMES = ['system', 'light', 'dark'];
+
+function readStored(key, fallback) {
+  try {
+    return window.localStorage.getItem(key) || fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function store(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch (e) {
+    // storage unavailable (private window): the choice just isn't remembered
+  }
+}
+
+export default function App() {
+  const feed = useLiveFeed();
+  // A link like /#training opens that tab; otherwise the last tab used.
+  const [tab, setTab] = useState(() => {
+    const fromUrl = window.location.hash.slice(1);
+    return TABS.some((t) => t.id === fromUrl) ? fromUrl : readStored('tab', 'live');
   });
+  const [theme, setTheme] = useState(() => readStored('theme', 'system'));
 
-  const [logs, setLogs] = useState([]);
-  const [isCooldown, setIsCooldown] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
-  const [currentView, setCurrentView] = useState('dashboard');
-
-  const fetchStatus = async () => {
-    try {
-      const response = await fetch('http://localhost:8000/status');
-      if (response.ok) {
-        const data = await response.json();
-        setStatus(data);
-        setIsConnected(true);
-        setIsCooldown(data.action && data.action.includes("Resting"));
-      } else {
-        setIsConnected(false);
-      }
-    } catch (error) {
-      setIsConnected(false);
-      setIsCooldown(false);
-    }
-  };
-
-  const fetchLogs = async () => {
-    try {
-      const response = await fetch('http://localhost:8000/logs-data');
-      if (response.ok) {
-        const data = await response.json();
-        setLogs(data.logs || []);
-      }
-    } catch (error) {}
-  };
-
+  // Follow the URL hash (links and the browser's back/forward buttons).
   useEffect(() => {
-    fetchStatus();
-    fetchLogs();
-    const interval = setInterval(() => {
-      fetchStatus();
-      fetchLogs();
-    }, 2000); 
-    return () => clearInterval(interval);
+    const onHashChange = () => {
+      const fromUrl = window.location.hash.slice(1);
+      if (TABS.some((t) => t.id === fromUrl)) setTab(fromUrl);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  const triggerLoad = async (type) => {
-    if (!isConnected) return;
-    try {
-      await fetch(`http://localhost:8000/${type}`, { method: 'POST' });
-      fetchStatus();
-    } catch (error) {
-      console.error(`Error triggering ${type}:`, error);
-    }
+  useEffect(() => {
+    if (theme === 'system') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = theme;
+    store('theme', theme);
+  }, [theme]);
+
+  const selectTab = (id) => {
+    setTab(id);
+    store('tab', id);
+    window.history.replaceState(null, '', '#' + id);
   };
 
-  // --- Logs View ---
-  if (currentView === 'logs') {
-    return (
-      <div className="app-container">
-        <header className="app-header">
-          <div className="header-titles">
-            <h1>System Terminal</h1>
-          </div>
-          <button className="btn btn-small btn-secondary" onClick={() => setCurrentView('dashboard')}>
-            Back to Dashboard
-          </button>
-        </header>
+  const status = feed.status;
+  const controllerOnline = status && status.connected;
 
-        <div className={`card full-page-terminal ${!isConnected ? 'dimmed' : ''}`}>
-          <div className="terminal-window full-height">
-            {!isConnected ? (
-              <span className="log-placeholder" style={{color: '#ef4444'}}>Disconnected from Python API...</span>
-            ) : logs.length === 0 ? (
-              <span className="log-placeholder">Waiting for logs...</span>
-            ) : (
-              logs.map((log, index) => (
-                <div key={index} className="log-line">{log}</div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // --- Dashboard View ---
   return (
-    <div className="app-container">
-      {/* Header */}
+    <div className="app">
       <header className="app-header">
-        <div className="header-titles">
-          <h1>K8s RL Autoscaler Dashboard</h1>
+        <div>
+          <h1>Autonomous Pod Scaling</h1>
+          <p className="app-subtitle">Deep RL autoscaler · DQN + LSTM · Kubernetes</p>
         </div>
-        
-        <div className="header-controls">
-          <button className="btn btn-small btn-secondary" onClick={() => setCurrentView('logs')}>
-            Open Logs
+        <div className="header-status">
+          {status && <span className="mode-pill">Mode: {status.mode}</span>}
+          <span className="connection">
+            <span className={feed.connected ? 'dot dot-good' : 'dot dot-critical'} aria-hidden="true" />
+            {feed.connected ? 'Engine connected' : 'Engine offline'}
+          </span>
+          <span className="connection">
+            <span className={controllerOnline ? 'dot dot-good' : 'dot dot-warning'} aria-hidden="true" />
+            {controllerOnline ? 'Controller reporting' : 'No controller'}
+          </span>
+          <button className="chip" onClick={() => setTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length])}>
+            Theme: {theme}
           </button>
-          <div className={`status-badge ${isConnected ? 'online' : 'offline'}`}>
-            <span className="dot"></span>
-            {isConnected ? 'Online' : 'Disconnected'}
-          </div>
         </div>
       </header>
 
-      {isCooldown && isConnected && (
-        <div className="cooldown-banner">
-          System is in Cooldown period to stabilize cluster state...
+      <nav className="tabs" role="tablist">
+        {TABS.map((t) => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'tab tab-active' : 'tab'}
+            onClick={() => selectTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      {!feed.connected && (
+        <div className="notice notice-critical" role="alert">
+          ✕ Can't reach the learning engine at {API_URL}. Start it with <code>python -m api.server</code> in back/python.
+        </div>
+      )}
+      {feed.connected && !controllerOnline && (
+        <div className="notice" role="status">
+          ! The engine is up but no controller is reporting. Check the Go controller in the cluster
+          (<code>kubectl logs deployment/autoscaler-controller</code>) or start the simulated cluster
+          (<code>python simulate_controller.py</code>).
         </div>
       )}
 
-      {/* Action Buttons Row */}
-      <section className={`controls-row ${!isConnected ? 'dimmed' : ''}`}>
-        <button className="btn btn-action btn-red" disabled={!isConnected} onClick={() => triggerLoad('start-load')}>
-          Inject High Load
-        </button>
-        <button className="btn btn-action btn-blue" disabled={!isConnected} onClick={() => triggerLoad('stop-load')}>
-          Stop Load (Idle)
-        </button>
-        <button className="btn btn-action btn-purple" disabled={!isConnected} onClick={() => triggerLoad('scale-min')}>
-          Force Scale Min
-        </button>
-        <button className="btn btn-action btn-orange" disabled={!isConnected} onClick={() => triggerLoad('scale-max')}>
-          Force Scale Max
-        </button>
-      </section>
-
-      {/* Metrics Grid */}
-      <section className={`metrics-grid ${!isConnected ? 'dimmed' : ''}`}>
-        <div className="card metric-card">
-          <span className="metric-label">ACTIVE PODS</span>
-          <div className="metric-value">{isConnected ? status.pods : '-'}</div>
-        </div>
-
-        <div className="card metric-card">
-          <span className="metric-label">CPU LOAD</span>
-          <div className="metric-value">{isConnected ? status.cpu_usage.toFixed(1) : '-'} <span className="small-percent">%</span></div>
-          <div className="metric-sub">Bucket: {isConnected ? status.cpu_bucket : '-'}</div>
-          <div className="progress-track"><div className="progress-fill cpu-fill" style={{ width: `${isConnected ? Math.min(status.cpu_usage, 100) : 0}%` }}></div></div>
-        </div>
-
-        <div className="card metric-card">
-          <span className="metric-label">RAM LOAD</span>
-          <div className="metric-value">{isConnected ? status.ram_usage.toFixed(1) : '-'} <span className="small-percent">%</span></div>
-          <div className="metric-sub">Bucket: {isConnected ? status.ram_bucket : '-'}</div>
-          <div className="progress-track"><div className="progress-fill ram-fill" style={{ width: `${isConnected ? Math.min(status.ram_usage, 100) : 0}%` }}></div></div>
-        </div>
-
-        <div className="card metric-card">
-          <span className="metric-label">BRAIN DECISION</span>
-          <div className="metric-value text-xl">{isConnected ? status.action : '-'}</div>
-        </div>
-
-        <div className="card metric-card">
-          <span className="metric-label">CURRENT REWARD</span>
-          <div className="metric-value">{isConnected ? status.reward.toFixed(1) : '-'}</div>
-        </div>
-      </section>
-
-      {/* Q-Table Knowledge */}
-      <section className={`q-table-section ${!isConnected ? 'dimmed' : ''}`}>
-        <div className="card">
-          <h2 className="card-title">Q-Table Knowledge (Current State)</h2>
-          <div className="q-grid">
-            <div className="q-box">
-              <span className="q-label">Scale Up (0)</span>
-              <span className="q-val">{isConnected ? status.q_values[0]?.toFixed(2) : '0.00'}</span>
-            </div>
-            <div className="q-box">
-              <span className="q-label">Scale Down (1)</span>
-              <span className="q-val">{isConnected ? status.q_values[1]?.toFixed(2) : '0.00'}</span>
-            </div>
-            <div className="q-box">
-              <span className="q-label">No Action (2)</span>
-              <span className="q-val">{isConnected ? status.q_values[2]?.toFixed(2) : '0.00'}</span>
-            </div>
-            <div className="q-box">
-              <span className="q-label">Restart (3)</span>
-              <span className="q-val">{isConnected ? status.q_values[3]?.toFixed(2) : '0.00'}</span>
-            </div>
-          </div>
-        </div>
-      </section>
+      {feed.status && tab === 'live' && <LiveView feed={feed} />}
+      {tab === 'training' && <TrainingView feed={feed} />}
+      {feed.config && tab === 'control' && <ControlView feed={feed} />}
     </div>
   );
 }
-
-export default App;

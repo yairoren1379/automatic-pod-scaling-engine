@@ -1,0 +1,74 @@
+# The Go cluster controller (source: back/go/controller), running inside the cluster.
+# It talks to the learning engine on the host machine through host.minikube.internal.
+#
+# Least privilege: the controller may only read pods, their metrics and the target Deployment,
+# read the app's /metrics through the pod proxy, and change the Deployment's replica count.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: autoscaler-controller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: autoscaler-controller
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods/proxy"]           # GET <pod>:8080/metrics through the API server
+  verbs: ["get"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get"]
+- apiGroups: ["apps"]
+  resources: ["deployments/scale"]    # the only write permission: the replica count
+  verbs: ["get", "update"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["pods"]                 # CPU and memory from metrics-server
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: autoscaler-controller
+subjects:
+- kind: ServiceAccount
+  name: autoscaler-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: autoscaler-controller
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoscaler-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: autoscaler-controller
+  template:
+    metadata:
+      labels:
+        app: autoscaler-controller
+    spec:
+      serviceAccountName: autoscaler-controller
+      containers:
+      - name: controller
+        image: yair-controller:latest
+        imagePullPolicy: Never
+        env:
+        - name: ZK_HOST
+          value: "zookeeper:2181"
+        - name: BRAIN_URL                 # the API server running on the host machine
+          value: "http://host.minikube.internal:8000"
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"

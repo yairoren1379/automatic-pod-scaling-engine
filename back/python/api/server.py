@@ -1,283 +1,388 @@
-import sys
-import os
+"""The learning engine's REST + WebSocket API (FastAPI).
+
+Run from back/python:
+    python -m api.server            (or: uvicorn api.server:app --port 8000)
+
+For the Go controller:
+    POST /api/decide        metrics in, DQN decision out
+    POST /api/report        what was executed and what the guardrails did
+
+For the dashboard:
+    WS   /ws                live stream: every control step, audit entry, config and load change
+    GET  /api/status        current snapshot
+    GET  /api/history       recent metrics time series
+    GET  /api/audit         recent decisions vs guardrail interventions
+    GET  /api/online-training   online learning curve (reward, loss, epsilon)
+    GET  /api/runs, /api/runs/{name}, /api/experiments, /api/models   offline training results
+    GET/PUT /api/config     configuration (stored in ZooKeeper)
+    POST /api/mode          baseline | shadow | active
+    GET/POST /api/load      load profile for the simulation panel
+"""
+import asyncio
+import copy
+import csv
 import json
-import subprocess
-import pickle
+import logging
+import os
+import sys
 import time
-from typing import Optional, List
+from contextlib import asynccontextmanager
+from typing import Optional
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-import uvicorn
 
-# in order to import from agents module
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir)
-sys.path.append(project_root)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE_DIR)   # allow running as a script from any folder
 
-from config_loader import APP_CONFIG
-from agents.q_learning.q_learning import QLearningAgent
-from agents.bandit.bandit_safety import SafetyBandit
+from core.state import ClusterMetrics                                          # noqa: E402
+from engine.learning_engine import MODES, LearningEngine                      # noqa: E402
+from engine.zk_store import ZkStore                                            # noqa: E402
+from setup_config import CONFIG_PATH, DEFAULT_CONFIG, DEFAULT_LOAD, LOAD_PATH, ZK_HOSTS  # noqa: E402
 
-from agents.q_learning.mock_env import calculate_reward
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger("api")
 
-app = FastAPI(title="K8s RL Learning Engine")
+MODELS_DIR = os.environ.get("MODELS_DIR", os.path.join(BASE_DIR, "models"))
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
+RUNS_DIR = os.path.join(BASE_DIR, "runs")
+DASHBOARD_BUILD = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), "front", "build")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-last_system_status = {
-    "pods": 0, "cpu_usage": 0.0, "ram_usage": 0.0, "cpu_bucket": 0, "ram_bucket": 0,
-    "action": "Waiting...", "reward": 0.0, "q_values": [0,0,0,0]
-}
+# ---------------------------------------------------------------------------------------------
+# WebSocket broadcasting
+# ---------------------------------------------------------------------------------------------
 
-brain_logs_buffer = []
+class Broadcaster:
+    """Pushes events to every connected dashboard (no polling)."""
 
-previous_action_id = None
+    def __init__(self):
+        self.clients = set()
+        self.loop = None
 
-def add_log(msg: str):
-    print(msg)
-    brain_logs_buffer.append(msg)
-    if len(brain_logs_buffer) > 100:
-        brain_logs_buffer.pop(0)
+    async def send(self, event: dict):
+        for client in list(self.clients):
+            try:
+                await client.send_json(event)
+            except Exception:
+                self.clients.discard(client)
 
-@app.get("/status")
-def get_dashboard_status():
-    return last_system_status
+    def send_threadsafe(self, event: dict):
+        """For callbacks that run outside the event loop (ZooKeeper watches)."""
+        if self.loop is not None:
+            asyncio.run_coroutine_threadsafe(self.send(event), self.loop)
 
-@app.get("/logs-data")
-def get_logs_data():
-    return {"logs": brain_logs_buffer}
 
-system_resting = False
+broadcaster = Broadcaster()
+state = {}   # filled at startup: store, engine, config, load
 
-def apply_system_rest():
-    global system_resting
-    system_resting = True
-    add_log("\n[SYSTEM] Entering 30 seconds cooldown period...")
-    time.sleep(30)
-    system_resting = False
-    add_log("[SYSTEM] Cooldown finished. AI is awake.\n")
 
-MIN_PODS = APP_CONFIG.get("system_limits", {}).get("min_pods", 1)
-MAX_PODS = APP_CONFIG.get("system_limits", {}).get("max_pods", 15)
-NUM_BUCKETS = APP_CONFIG.get("metrics_config", {}).get("num_buckets", 34)
+def on_config_change(config: dict):
+    merged = merge_with_defaults(config)
+    state["config"] = merged
+    if "engine" in state:
+        state["engine"].apply_config(merged)
+    broadcaster.send_threadsafe({"type": "config", "config": merged})
 
-VALID_POD_STATES = MAX_PODS - MIN_PODS + 1
-num_states = NUM_BUCKETS * NUM_BUCKETS * VALID_POD_STATES
-num_actions = len(APP_CONFIG["actions"])
 
-agent = QLearningAgent(num_states=num_states, num_actions=num_actions)
-safety_bandit = SafetyBandit(num_states=num_states, arms_count=num_actions)
+def on_load_change(load: dict):
+    state["load"] = load
+    broadcaster.send_threadsafe({"type": "load", "load": load})
 
-if os.path.exists("brain_model.pkl"):
-    with open("brain_model.pkl", "rb") as f:
-        data = pickle.load(f)
-        agent.q_table = data["q_table"]
-        
-        if "bandit_counts" in data and "bandit_failures" in data:
-            safety_bandit.action_counts = data["bandit_counts"]
-            safety_bandit.failure_counts = data["bandit_failures"]
-            
-        agent.epsilon = 0.05
-    print("Loaded pre-trained model successfully!")
-else:
-    print("No pre-trained model found. Starting with fresh agent.")
-    
-class ClusterState(BaseModel):
-    pod_count: int
-    cpu_usage: float
-    ram_usage: float
-    is_crashed: bool
 
-def get_bucket(usage: float) -> int:
-    return int(max(0, min(100, usage)) // APP_CONFIG.get("metrics_config", {}).get("bucket_step", 3))
+def merge_with_defaults(config: dict) -> dict:
+    """A ZNode written by an older version may miss new keys: fill them from the defaults."""
+    merged = copy.deepcopy(DEFAULT_CONFIG)
+    for section, values in config.items():
+        if isinstance(values, dict) and section in merged:
+            merged[section].update(values)
+    return merged
 
-def encode_state(cpu_bucket: int, ram_bucket: int, replicas: int) -> int:
-    pod_index = replicas - MIN_PODS
-    return (cpu_bucket * NUM_BUCKETS + ram_bucket) * VALID_POD_STATES + pod_index
 
-def get_action_string(action_id: int) -> str:
-    mapping = {
-        APP_CONFIG["actions"]["scale_up"]: "ScaleUp",
-        APP_CONFIG["actions"]["scale_down"]: "ScaleDown",
-        APP_CONFIG["actions"]["no_action"]: "None",
-        APP_CONFIG["actions"]["restart"]: "Restart"
-    }
-    return mapping.get(action_id, "None")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    broadcaster.loop = asyncio.get_running_loop()
+    store = ZkStore(ZK_HOSTS, {CONFIG_PATH: DEFAULT_CONFIG, LOAD_PATH: DEFAULT_LOAD},
+                    enabled=os.environ.get("ZK_DISABLED") != "1")
+    state["store"] = store
+    state["config"] = merge_with_defaults(store.get(CONFIG_PATH))
+    state["load"] = store.get(LOAD_PATH)
+    engine = LearningEngine(state["config"], MODELS_DIR, DATA_DIR)
+    state["engine"] = engine
+    store.watch(CONFIG_PATH, on_config_change)
+    store.watch(LOAD_PATH, on_load_change)
+    log.info("Model: %s | forecaster: %s | ZooKeeper: %s", engine.model_source, engine.forecaster_source,
+             "connected" if store.connected else "offline (in-memory config)")
+    yield
+    engine.save()
+    store.close()
 
-class StateRequest(BaseModel):
-    cpu_percentage: float
-    ram_percentage: float
+
+app = FastAPI(title="Autoscaler Learning Engine", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+# ---------------------------------------------------------------------------------------------
+# Go controller endpoints
+# ---------------------------------------------------------------------------------------------
+
+class MetricsIn(BaseModel):
+    cpu_percent: float
+    ram_percent: float
+    latency_ms: float
+    qps: float
+    error_rate_percent: float
     replicas: int
-    allowed_actions: Optional[List[int]] = None
-    
-class LearnRequest(BaseModel):
-    state: StateRequest
-    action: int
-    next_state: StateRequest
-    done: bool
+    pod_crashed: bool = False
 
-@app.get("/")
-def read_root():
-    return {"status": "Learning Engine is Running"}
 
-@app.post("/decide")
-def decide(req: ClusterState):
-    global system_resting
-    if system_resting:
-        last_system_status["action"] = "Resting (30s)..."
-        return {"action": "Resting"}
+class DecideRequest(BaseModel):
+    mode: str
+    metrics: MetricsIn
 
-    cpu_bucket = get_bucket(req.cpu_usage)
-    ram_bucket = get_bucket(req.ram_usage)
-    current_replicas = min(req.pod_count, MAX_PODS)
-    
-    state_idx = encode_state(cpu_bucket, ram_bucket, current_replicas)
-    
-    safe_actions = list(APP_CONFIG["actions"].values())
-    action_id = agent.select_action(state_idx, allowed_actions=safe_actions)
-    action_str = get_action_string(action_id)
-    
-    last_system_status["pods"] = current_replicas
-    last_system_status["cpu_usage"] = req.cpu_usage
-    last_system_status["ram_usage"] = req.ram_usage
-    last_system_status["cpu_bucket"] = cpu_bucket
-    last_system_status["ram_bucket"] = ram_bucket
-    last_system_status["action"] = action_str
-    last_system_status["q_values"] = agent.q_table[state_idx]
-    
-    return {"action": action_str}
 
-@app.post("/predict")
-def get_action(req: StateRequest):
-    global system_resting
-    if system_resting:
-        return {
-            "recommended_action": APP_CONFIG["actions"]["no_action"],
-            "state_index": 0,
-            "action_string": "Resting...",
-            "q_values": [0,0,0,0]
-        }
+class ReportRequest(BaseModel):
+    decision_id: int
+    executed_action: str            # ScaleUp | ScaleDown | Hold
+    source: str                     # "dqn" or "baseline": who chose the executed action
+    blocked: bool = False
+    block_reason: str = ""
+    replicas_before: int
+    replicas_after: int
 
-    cpu_bucket = get_bucket(req.cpu_percentage)
-    ram_bucket = get_bucket(req.ram_percentage)
-    state_idx = encode_state(cpu_bucket, ram_bucket, req.replicas)
-    
-    if state_idx >= num_states or state_idx < APP_CONFIG["logic_constants"]["min_index"]:
-        raise HTTPException(status_code=400, detail="State out of bounds")
-        
-    action = agent.select_action(state_idx, allowed_actions=req.allowed_actions)
-    
-    return {
-        "recommended_action": action,
-        "state_index": state_idx,
-        "action_string": get_action_string(action),
-        "q_values": agent.q_table[state_idx]
-    }
 
-is_dynamic_load_active = False
+@app.post("/api/decide")
+async def decide(request: DecideRequest):
+    if request.mode not in MODES:
+        raise HTTPException(400, f"mode must be one of {MODES}")
+    return state["engine"].decide(request.mode, ClusterMetrics(**request.metrics.model_dump()))
 
-@app.get("/is-load-active")
-def check_load():
-    return {"active": is_dynamic_load_active}
 
-@app.post("/start-load")
-def start_load(background_tasks: BackgroundTasks):
-    global is_dynamic_load_active
-    is_dynamic_load_active = True
-    add_log("[SYSTEM] Dashboard triggered Dynamic Load! (Total Traffic: 500%)")
-    
-    background_tasks.add_task(apply_system_rest)
-    return {"status": "Dynamic Load Started"}
+@app.post("/api/report")
+async def report(request: ReportRequest):
+    try:
+        events = state["engine"].report(**request.model_dump())
+    except (LookupError, ValueError) as e:
+        raise HTTPException(409, str(e))
+    await broadcaster.send({"type": "step", "status": state["engine"].snapshot(), **events})
+    return {"status": "recorded"}
 
-@app.post("/stop-load")
-def stop_load(background_tasks: BackgroundTasks):
-    global is_dynamic_load_active
-    is_dynamic_load_active = False
-    add_log("[SYSTEM] Dashboard stopped Dynamic Load. Traffic back to normal.")
-    
-    background_tasks.add_task(apply_system_rest)
-    return {"status": "Load Stopped"}
 
-@app.post("/scale-min")
-def scale_min(background_tasks: BackgroundTasks):
-    cmd = "kubectl scale deployment yair-api-python --replicas=1"
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if result.returncode == 0:
-        add_log("[SYSTEM] Scaled K8s deployment to 1 pods!")
+# ---------------------------------------------------------------------------------------------
+# Dashboard endpoints
+# ---------------------------------------------------------------------------------------------
+
+@app.websocket("/ws")
+async def websocket(ws: WebSocket):
+    await ws.accept()
+    engine = state["engine"]
+    await ws.send_json({
+        "type": "snapshot", "status": engine.snapshot(), "history": engine.recent_history(720),
+        "audit": engine.recent_audit(100), "learning": engine.online_learning_curve(),
+        "config": state["config"], "load": state["load"],
+    })
+    broadcaster.clients.add(ws)
+    try:
+        while True:
+            await ws.receive_text()   # keep the connection open; the client sends nothing
+    except WebSocketDisconnect:
+        broadcaster.clients.discard(ws)
+
+
+@app.get("/api/status")
+def get_status():
+    return state["engine"].snapshot()
+
+
+@app.get("/api/history")
+def get_history(limit: int = 720):
+    return state["engine"].recent_history(limit)
+
+
+@app.get("/api/audit")
+def get_audit(limit: int = 100):
+    return state["engine"].recent_audit(limit)
+
+
+@app.get("/api/online-training")
+def get_online_training():
+    return state["engine"].online_learning_curve()
+
+
+@app.get("/api/config")
+def get_config():
+    return state["config"]
+
+
+@app.put("/api/config")
+def update_config(changes: dict):
+    """Partial update: {"section": {"key": value}}. Only existing numeric keys can change here."""
+    config = copy.deepcopy(state["config"])
+    for section, values in changes.items():
+        if section not in config or not isinstance(values, dict):
+            raise HTTPException(400, f"unknown section {section}")
+        for key, value in values.items():
+            if key not in config[section]:
+                raise HTTPException(400, f"unknown key {section}.{key}")
+            current = config[section][key]
+            if isinstance(current, (int, float)) and not isinstance(value, (int, float)):
+                raise HTTPException(400, f"{section}.{key} must be a number")
+            config[section][key] = value
+    validate_config(config)
+    state["store"].set(CONFIG_PATH, config)
+    return config
+
+
+def validate_config(config: dict):
+    limits = config["guardrails"]
+    if not 1 <= limits["min_replicas"] <= limits["max_replicas"]:
+        raise HTTPException(400, "guardrails: need 1 <= min_replicas <= max_replicas")
+    for section, key in (("dqn", "gamma"), ("online", "active_epsilon")):
+        if not 0 <= config[section][key] <= 1:
+            raise HTTPException(400, f"{section}.{key} must be between 0 and 1")
+
+
+class ModeRequest(BaseModel):
+    mode: str
+
+
+@app.post("/api/mode")
+def set_mode(request: ModeRequest):
+    if request.mode not in MODES:
+        raise HTTPException(400, f"mode must be one of {MODES}")
+    config = copy.deepcopy(state["config"])
+    config["controller"]["mode"] = request.mode
+    state["store"].set(CONFIG_PATH, config)
+    return {"mode": request.mode}
+
+
+class LoadRequest(BaseModel):
+    profile: str                    # off | constant | spike | periodic
+    base_qps: Optional[float] = None
+
+
+@app.get("/api/load")
+def get_load():
+    return state["load"]
+
+
+@app.post("/api/load")
+def set_load(request: LoadRequest):
+    if request.profile not in ("off", "constant", "spike", "periodic"):
+        raise HTTPException(400, "profile must be off, constant, spike or periodic")
+    load_cfg = state["config"]["load_profiles"]
+    spec = {"profile": request.profile, "started_at": time.time()}
+    if request.profile == "off":
+        spec["base_qps"] = load_cfg["idle_qps"]   # background traffic, never fully silent
     else:
-        add_log(f"[ERROR] Failed to scale to 1: {result.stderr}")
-        
-    background_tasks.add_task(apply_system_rest)
-    return {"status": "Scaled to 1, entering cooldown"}
+        spec.update({
+            "base_qps": request.base_qps or load_cfg["default_base_qps"],
+            "spike_multiplier": load_cfg["spike_multiplier"],
+            "spike_after_seconds": load_cfg["spike_after_seconds"],
+            "spike_duration_seconds": load_cfg["spike_duration_seconds"],
+            "period_seconds": load_cfg["period_seconds"],
+            "amplitude": load_cfg["amplitude"],
+        })
+    state["store"].set(LOAD_PATH, spec)
+    return spec
 
-@app.post("/scale-max")
-def scale_max(background_tasks: BackgroundTasks):
-    cmd = "kubectl scale deployment yair-api-python --replicas=15"
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if result.returncode == 0:
-        add_log("[SYSTEM] Scaled K8s deployment to 15 pods!")
-    else:
-        add_log(f"[ERROR] Failed to scale to 15: {result.stderr}")
-        
-    background_tasks.add_task(apply_system_rest)
-    return {"status": "Scaled to 15, entering cooldown"}
 
-step_counter = 0
+# ---------------------------------------------------------------------------------------------
+# Offline training results (files written by train_dqn.py, run_experiments.py, train_lstm.py)
+# ---------------------------------------------------------------------------------------------
 
-@app.post("/train")
-def update_agent(req: LearnRequest):
-    global step_counter, system_resting, previous_action_id
-    if system_resting:
-        return {"status": "resting, skipped training"}
-    
-    current_replicas = min(req.state.replicas, MAX_PODS)
-    next_replicas = min(req.next_state.replicas, MAX_PODS)
-    
-    cpu_bucket = get_bucket(req.state.cpu_percentage)
-    ram_bucket = get_bucket(req.state.ram_percentage)
-    state_idx = encode_state(cpu_bucket, ram_bucket, current_replicas)
-    
-    next_cpu_bucket = get_bucket(req.next_state.cpu_percentage)
-    next_ram_bucket = get_bucket(req.next_state.ram_percentage)
-    next_state_idx = encode_state(next_cpu_bucket, next_ram_bucket, next_replicas)
+def _run_dirs():
+    """Every training run folder, including the experiment runs. Runs from older versions of the
+    code (without the current config format) are skipped."""
+    found = {}
+    for parent, prefix in ((RUNS_DIR, ""), (os.path.join(RUNS_DIR, "experiments"), "experiments/")):
+        if not os.path.isdir(parent):
+            continue
+        for name in sorted(os.listdir(parent)):
+            run_dir = os.path.join(parent, name)
+            config_path = os.path.join(run_dir, "config.json")
+            if not os.path.exists(os.path.join(run_dir, "metrics.csv")) or not os.path.exists(config_path):
+                continue
+            with open(config_path) as f:
+                if "guardrails" not in json.load(f).get("config", {}):
+                    continue
+            found[prefix + name] = run_dir
+    return found
 
-    calculated_reward = calculate_reward(
-        cpu_bucket,
-        ram_bucket,
-        current_replicas,
-        req.action,
-        previous_action_id,
-        req.done)
-    
-    previous_action_id = req.action
 
-    agent.updateAction(state=state_idx, action=req.action, reward=calculated_reward, next_state=next_state_idx, done=req.done)
-    last_system_status["reward"] = calculated_reward
-    
-    is_catastrophic = calculated_reward <= APP_CONFIG["rl_hyperparameters"].get("catastrophic_penalty", -10.0)
-    new_q_val = agent.q_table[state_idx][req.action]
-    
-    step_counter += 1
-    if step_counter % 2 == 0:
-        q_values = agent.q_table[state_idx]
-        log_text = (
-            f"--- Q-Table Snapshot (Step {step_counter}) ---\n"
-            f"State: [CPU:{req.state.cpu_percentage}% RAM:{req.state.ram_percentage}% Pods:{current_replicas}] | Action: {get_action_string(req.action)} | Reward: {calculated_reward}\n"
-            f"Brain Knowledge -> ScaleUp: {q_values[APP_CONFIG['actions']['scale_up']]:.2f} | "
-            f"ScaleDown: {q_values[APP_CONFIG['actions']['scale_down']]:.2f} | "
-            f"None: {q_values[APP_CONFIG['actions']['no_action']]:.2f}\n"
-        )
-        add_log(log_text)
+@app.get("/api/runs")
+def list_runs():
+    runs = []
+    for name, run_dir in _run_dirs().items():
+        with open(os.path.join(run_dir, "config.json")) as f:
+            args = json.load(f).get("args", {})
+        runs.append({"name": name, "modified": os.path.getmtime(os.path.join(run_dir, "metrics.csv")),
+                     "epsilon_mode": args.get("epsilon_mode"), "lstm": not args.get("no_lstm", False),
+                     "has_evaluation": os.path.exists(os.path.join(run_dir, "evaluation.json"))})
+    return sorted(runs, key=lambda r: r["modified"], reverse=True)
 
-    return {"status": "updated", "new_q_value": new_q_val}
+
+@app.get("/api/runs/{name:path}")
+def get_run(name: str):
+    run_dir = _run_dirs().get(name)
+    if run_dir is None:
+        raise HTTPException(404, "run not found")
+    with open(os.path.join(run_dir, "metrics.csv"), newline="") as f:
+        rows = [{key: _number(value) for key, value in row.items()} for row in csv.DictReader(f)]
+    with open(os.path.join(run_dir, "config.json")) as f:
+        run_config = json.load(f)
+    evaluation = None
+    if os.path.exists(os.path.join(run_dir, "evaluation.json")):
+        with open(os.path.join(run_dir, "evaluation.json")) as f:
+            evaluation = json.load(f)
+    return {"name": name, "args": run_config.get("args"), "dqn": run_config["config"]["dqn"],
+            "episodes": rows, "evaluation": evaluation}
+
+
+@app.get("/api/experiments")
+def get_experiments():
+    folder = os.path.join(RUNS_DIR, "experiments")
+    summary_path = os.path.join(folder, "summary.csv")
+    if not os.path.exists(summary_path):
+        return {"summary": [], "threshold": None}
+    with open(summary_path, newline="") as f:
+        summary = [{key: _number(value) for key, value in row.items()} for row in csv.DictReader(f)]
+    threshold = None
+    if os.path.exists(os.path.join(folder, "threshold_baseline.json")):
+        with open(os.path.join(folder, "threshold_baseline.json")) as f:
+            threshold = json.load(f)
+    return {"summary": summary, "threshold": threshold}
+
+
+@app.get("/api/models")
+def get_models():
+    info = {"dqn": None, "lstm": None}
+    info_path = os.path.join(MODELS_DIR, "model_info.json")
+    if os.path.exists(info_path):
+        with open(info_path) as f:
+            info["dqn"] = json.load(f)
+    lstm_path = os.path.join(MODELS_DIR, "lstm.pt")
+    if os.path.exists(lstm_path):
+        from predictor.lstm_forecaster import load_forecaster
+        _, meta = load_forecaster(lstm_path)
+        info["lstm"] = meta
+    return info
+
+
+def _number(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return value
+
+
+# The built dashboard (npm run build), so everything can be served from one port.
+if os.path.isdir(DASHBOARD_BUILD):
+    app.mount("/", StaticFiles(directory=DASHBOARD_BUILD, html=True), name="dashboard")
+
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8000")))

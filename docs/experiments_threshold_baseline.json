@@ -1,0 +1,10 @@
+{
+  "total_reward": -427.26,
+  "severe_failures": 4.27,
+  "slo_violation_percent": 2.58,
+  "avg_latency_ms": 59.47,
+  "avg_replicas": 9.94,
+  "scale_actions": 5.88,
+  "flaps": 0.0,
+  "blocked_actions": 0.0
+}

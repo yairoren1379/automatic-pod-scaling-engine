@@ -1,0 +1,7 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/back/python/.venv/Scripts/python.exe",
+  "python.analysis.extraPaths": ["${workspaceFolder}/back/python"],
+  "python.testing.pytestEnabled": true,
+  "python.testing.cwd": "${workspaceFolder}/back/python",
+  "python.testing.pytestArgs": ["tests"]
+}

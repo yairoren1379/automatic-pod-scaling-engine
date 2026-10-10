@@ -1,1 +1,0 @@
-# Yair-devops-project

@@ -1,0 +1,31 @@
+# Sends traffic to yair-api following the load profile in ZooKeeper (source: back/go/loadgen).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loadgen
+  template:
+    metadata:
+      labels:
+        app: loadgen
+    spec:
+      containers:
+      - name: loadgen
+        image: yair-loadgen:latest
+        imagePullPolicy: Never
+        env:
+        - name: ZK_HOST
+          value: "zookeeper:2181"
+        - name: TARGET_URL
+          value: "http://yair-api:8080/work"
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "64Mi"
+          limits:
+            cpu: "1"
+            memory: "256Mi"

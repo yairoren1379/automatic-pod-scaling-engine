@@ -1,0 +1,51 @@
+{
+  "stage": "shadow",
+  "base_qps": 300.0,
+  "minutes_per_profile": 12.0,
+  "start_replicas": 4,
+  "latency_slo_ms": 200,
+  "profiles": {
+    "constant": {
+      "control_loops": 23,
+      "total_reward": 0.12,
+      "severe_failures": 0,
+      "slo_violation_percent": 0.0,
+      "avg_latency_ms": 44.4,
+      "avg_error_rate_percent": 0.0,
+      "avg_cpu_percent": 67.5,
+      "avg_replicas": 5.91,
+      "max_replicas": 6,
+      "scale_actions": 1,
+      "flaps": 0,
+      "blocked_actions": 0
+    },
+    "spike": {
+      "control_loops": 22,
+      "total_reward": -299.9,
+      "severe_failures": 3,
+      "slo_violation_percent": 27.3,
+      "avg_latency_ms": 258.1,
+      "avg_error_rate_percent": 1.72,
+      "avg_cpu_percent": 68.7,
+      "avg_replicas": 9.23,
+      "max_replicas": 11,
+      "scale_actions": 7,
+      "flaps": 0,
+      "blocked_actions": 0
+    },
+    "periodic": {
+      "control_loops": 22,
+      "total_reward": -398.37,
+      "severe_failures": 4,
+      "slo_violation_percent": 22.7,
+      "avg_latency_ms": 282.9,
+      "avg_error_rate_percent": 3.99,
+      "avg_cpu_percent": 63.4,
+      "avg_replicas": 6.64,
+      "max_replicas": 9,
+      "scale_actions": 12,
+      "flaps": 1,
+      "blocked_actions": 0
+    }
+  }
+}

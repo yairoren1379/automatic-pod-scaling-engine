@@ -1,0 +1,56 @@
+[
+  {
+    "cpu_percent": 39.0,
+    "ram_percent": 26.847457885742188,
+    "latency_ms": 22.657928373126047,
+    "qps": 60.004028317288785,
+    "error_rate_percent": 0.0,
+    "target_per_pod": 30,
+    "readings": 2
+  },
+  {
+    "cpu_percent": 61.25,
+    "ram_percent": 60.900115966796875,
+    "latency_ms": 24.848437938732655,
+    "qps": 120.04185273013894,
+    "error_rate_percent": 0.0,
+    "target_per_pod": 60,
+    "readings": 2
+  },
+  {
+    "cpu_percent": 88.375,
+    "ram_percent": 72.12142944335938,
+    "latency_ms": 1335.569102094642,
+    "qps": 175.5258675324652,
+    "error_rate_percent": 15.587213872529995,
+    "target_per_pod": 90,
+    "readings": 2
+  },
+  {
+    "cpu_percent": 49.75,
+    "ram_percent": 43.363189697265625,
+    "latency_ms": 611.272936971831,
+    "qps": 50.94606726328729,
+    "error_rate_percent": 15.581340279422212,
+    "target_per_pod": 110,
+    "readings": 2
+  },
+  {
+    "cpu_percent": 53.0,
+    "ram_percent": 48.02703857421875,
+    "latency_ms": 1390.3901949786323,
+    "qps": 106.59747519575524,
+    "error_rate_percent": 43.77379010331702,
+    "target_per_pod": 130,
+    "readings": 1
+  },
+  {
+    "cpu_percent": 100.0,
+    "ram_percent": 85.87188720703125,
+    "latency_ms": 905.3148253265908,
+    "qps": 87.94359380994132,
+    "error_rate_percent": 29.380831212892282,
+    "target_per_pod": 150,
+    "readings": 2
+  }
+]
