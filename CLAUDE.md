@@ -81,7 +81,7 @@ Experiments: constant vs decaying epsilon; a grid of learning rate x gamma.
 
 ## Environment
 - Local development on Minikube. The development machine has 32GB RAM and 20 logical CPUs
-  (upgraded from 16GB on 2026-10-14); Docker Desktop gets ~15.5GB. Minikube runs with 12GB / 10
+  (upgraded from 16GB on 2026-10-14); Docker Desktop gets ~15.5GB. Minikube runs with 10GB / 8
   CPUs. Target pods are limited to 200m CPU / 256Mi, max 15 replicas. The real-cluster results in
   the README were recorded earlier with 6GB / 6 CPUs.
 - Windows host with Smart App Control ON: it blocks the locally compiled Go controller binary
