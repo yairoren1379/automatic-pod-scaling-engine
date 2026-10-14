@@ -80,9 +80,10 @@ Causal, not purely random, so the networks can learn real gradients:
 Experiments: constant vs decaying epsilon; a grid of learning rate x gamma.
 
 ## Environment
-- Local development on Minikube. The proposal assumed a 32GB host; the development machine
-  measured 15.7GB, and Docker Desktop gets half of it (~7.8GB). Minikube runs with 6GB / 6 CPUs;
-  target pods are limited to 200m CPU / 256Mi so 15 replicas fit.
+- Local development on Minikube. The development machine has 32GB RAM and 20 logical CPUs
+  (upgraded from 16GB on 2026-10-14); Docker Desktop gets ~15.5GB. Minikube runs with 12GB / 10
+  CPUs. Target pods are limited to 200m CPU / 256Mi, max 15 replicas. The real-cluster results in
+  the README were recorded earlier with 6GB / 6 CPUs.
 - Windows host with Smart App Control ON: it blocks the locally compiled Go controller binary
   (`go run ./controller` fails). The controller therefore runs inside the cluster
   (`back/k8s/controller.yaml`, least-privilege RBAC) and reaches the API on the host through

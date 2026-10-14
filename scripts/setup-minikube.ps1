@@ -11,9 +11,11 @@ function Run([string]$description, [scriptblock]$command) {
     if ($LASTEXITCODE -ne 0) { throw "Failed: $description" }
 }
 
-# Docker Desktop gets half of the host's RAM by default (about 7.8GB on a 16GB machine), so the
-# cluster gets 6GB. With more memory available, more is fine.
-Run "Starting Minikube (6GB RAM, 6 CPUs)" { minikube start --driver=docker --memory=6144 --cpus=6 }
+# Docker Desktop gets half of the host's RAM by default (about 15.5GB on the 32GB development
+# machine, 20 CPUs). The cluster gets 12GB and 10 CPUs, leaving room for Docker itself and for
+# Windows, the API server and the dashboard. On a 16GB machine use --memory=6144 --cpus=6.
+# Minikube cannot resize an existing cluster: run `minikube delete` first to apply new sizes.
+Run "Starting Minikube (12GB RAM, 10 CPUs)" { minikube start --driver=docker --memory=12288 --cpus=10 }
 Run "Enabling metrics-server (CPU and memory per pod)" { minikube addons enable metrics-server }
 
 # Minikube's addon refreshes CPU and memory only every 60s; the controller decides every 30s,

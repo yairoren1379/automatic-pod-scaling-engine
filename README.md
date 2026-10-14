@@ -117,7 +117,7 @@ Go programs are compiled inside Docker.
 ```powershell
 winget install Kubernetes.minikube Kubernetes.kubectl
 
-# Start Minikube (6 GB RAM, 6 CPUs), enable metrics-server, build the three Go images, deploy
+# Start Minikube (12 GB RAM, 10 CPUs), enable metrics-server, build the three Go images, deploy
 # everything. Run it again after changing Go code: it rebuilds and restarts the pods.
 powershell -ExecutionPolicy Bypass -File scripts\setup-minikube.ps1
 
