@@ -9,6 +9,8 @@ design decisions when making them.
 - Talk to the user in Hebrew. Write code, identifiers, comments and commit messages in English.
 - Follow the architecture below. Don't swap core technologies (Go controller, Python DRL, React,
   ZooKeeper, file-based persistence) without asking first. They are part of an approved proposal.
+- The project is finished. On a machine other than the development PC (the 16GB defense laptop),
+  follow `docs/LAPTOP_SETUP.md`: install, run and verify only. No retraining or redesign.
 
 ## The problem
 Static rules ("scale up at 80% CPU") cause flapping, ignore latency and QPS, and react only after
