@@ -1,0 +1,57 @@
+{
+  "stage": "baseline",
+  "base_qps": 300,
+  "qps_levels": [
+    300
+  ],
+  "rounds": 1,
+  "minutes_per_profile": 12,
+  "start_replicas": 4,
+  "latency_slo_ms": 200,
+  "online_steps_start": 160,
+  "profiles": {
+    "constant": {
+      "control_loops": 24,
+      "total_reward": 1.4,
+      "severe_failures": 0,
+      "slo_violation_percent": 4.2,
+      "avg_latency_ms": 47.2,
+      "avg_error_rate_percent": 0.0,
+      "avg_cpu_percent": 67.5,
+      "avg_replicas": 5.88,
+      "max_replicas": 6,
+      "scale_actions": 2,
+      "flaps": 0,
+      "blocked_actions": 0
+    },
+    "spike": {
+      "control_loops": 22,
+      "total_reward": -398.09,
+      "severe_failures": 4,
+      "slo_violation_percent": 22.7,
+      "avg_latency_ms": 256.2,
+      "avg_error_rate_percent": 2.42,
+      "avg_cpu_percent": 69.1,
+      "avg_replicas": 9.09,
+      "max_replicas": 11,
+      "scale_actions": 7,
+      "flaps": 0,
+      "blocked_actions": 0
+    },
+    "periodic": {
+      "control_loops": 22,
+      "total_reward": -396.27,
+      "severe_failures": 4,
+      "slo_violation_percent": 22.7,
+      "avg_latency_ms": 273.8,
+      "avg_error_rate_percent": 3.66,
+      "avg_cpu_percent": 64.5,
+      "avg_replicas": 6.36,
+      "max_replicas": 8,
+      "scale_actions": 10,
+      "flaps": 1,
+      "blocked_actions": 0
+    }
+  },
+  "online_steps_end": 160
+}

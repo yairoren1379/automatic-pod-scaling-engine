@@ -82,8 +82,8 @@ Experiments: constant vs decaying epsilon; a grid of learning rate x gamma.
 ## Environment
 - Local development on Minikube. The development machine has 32GB RAM and 20 logical CPUs
   (upgraded from 16GB on 2026-10-14); Docker Desktop gets ~15.5GB. Minikube runs with 10GB / 8
-  CPUs. Target pods are limited to 200m CPU / 256Mi, max 15 replicas. The real-cluster results in
-  the README were recorded earlier with 6GB / 6 CPUs.
+  CPUs. Target pods are limited to 200m CPU / 256Mi, max 15 replicas. README real-cluster results:
+  run 1 on 6 CPUs (160 real transitions), run 2 on 8 CPUs (639, after a 4-hour shadow stage).
 - Windows host with Smart App Control ON: it blocks the locally compiled Go controller binary
   (`go run ./controller` fails). The controller therefore runs inside the cluster
   (`back/k8s/controller.yaml`, least-privilege RBAC) and reaches the API on the host through

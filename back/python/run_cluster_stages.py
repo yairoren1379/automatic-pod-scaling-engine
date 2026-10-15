@@ -207,9 +207,10 @@ def plot_comparison(run_dirs, summaries, path):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from matplotlib.ticker import FixedLocator, NullFormatter, NullLocator, ScalarFormatter
+    from matplotlib.ticker import FixedLocator, MaxNLocator, NullFormatter, NullLocator, ScalarFormatter
 
-    colors = ["#2a78d6", "#eb6834", "#1baf7a"]
+    # One color per stage (not per position), the same in every figure.
+    colors = {"baseline": "#2a78d6", "shadow": "#eb6834", "active": "#1baf7a"}
     # Shadow is the threshold policy again, so it gets a dashed line: identity is not color alone.
     styles = {"shadow": "--"}
     labels = {"baseline": "baseline: thresholds drive",
@@ -219,7 +220,8 @@ def plot_comparison(run_dirs, summaries, path):
     fig, axes = plt.subplots(len(PROFILES), 3, figsize=(14, 3.2 * len(PROFILES)), squeeze=False)
     for col, title in enumerate(["Requests per second", "Replicas", "Latency (ms, log scale)"]):
         axes[0][col].set_title(title, loc="left", fontsize=10)
-    for run_dir, summary, color in zip(run_dirs, summaries, colors):
+    for run_dir, summary in zip(run_dirs, summaries):
+        color = colors.get(summary["stage"], "#52514e")
         points = load_points(run_dir)
         stage = summary["stage"]
         for row, profile in enumerate(PROFILES):
@@ -235,6 +237,7 @@ def plot_comparison(run_dirs, summaries, path):
                         drawstyle="steps-post" if key == "replicas" else "default")
     for row, profile in enumerate(PROFILES):
         axes[row][0].set_ylabel(profile, fontsize=10)
+        axes[row][1].yaxis.set_major_locator(MaxNLocator(integer=True))   # whole replicas
         latency_ax = axes[row][2]
         latency_ax.set_yscale("log")
         # Plain numbers (50, 100, 200 ...) instead of matplotlib's 2x10^2 labels.

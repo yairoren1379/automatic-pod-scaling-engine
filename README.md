@@ -344,11 +344,11 @@ cannot absorb. See the next section for the real cluster.
 
 ## Results (real cluster)
 
-Setup: Minikube on the development laptop (6 GB RAM, 6 CPUs). Target-app pods are limited to
-200m CPU / 256 Mi, between 1 and 15 replicas; the controller decides every 30 seconds. Each stage
-ran the three load profiles for 12 minutes each (22–24 control loops), and every profile started
-from the same point: idle traffic, 4 replicas, then 300 requests/s. *Spike*: ×2 (600 requests/s)
-from minute 2 to minute 8. *Periodic*: 150–450 requests/s, a 10-minute period.
+Setup: Minikube on the development machine. Target-app pods are limited to 200m CPU / 256 Mi,
+between 1 and 15 replicas; the controller decides every 30 seconds. Each stage ran the three load
+profiles for 12 minutes each (22–24 control loops), and every profile started from the same
+point: idle traffic, 4 replicas, then 300 requests/s. *Spike*: ×2 (600 requests/s) from minute 2
+to minute 8. *Periodic*: 150–450 requests/s, a 10-minute period.
 
 | Stage | Who scales the cluster | Learning |
 |---|---|---|
@@ -356,60 +356,76 @@ from minute 2 to minute 8. *Periodic*: 150–450 requests/s, a 10-minute period.
 | shadow | the same threshold controller | the DQN learns from every real transition (off-policy) |
 | active | the DQN, through the guardrails | fine-tuning (learning rate 0.0001, epsilon 0.02) |
 
-| Load profile | Run | Severe failures ↓ | SLO misses ↓ | Avg. latency | Errors | Avg. replicas | Scale actions |
-|---|---|---|---|---|---|---|---|
-| constant | thresholds (baseline) | 0 | 0% | 45 ms | 0% | 5.8 | 2 |
-| | thresholds (shadow) | 0 | 0% | 44 ms | 0% | 5.9 | 1 |
-| | **DQN (active)** | 0 | 0% | 28 ms | 0% | 8.8 | 6 |
-| spike | thresholds (baseline) | 3 | 22.7% | 252 ms | 2.5% | 9.0 | 7 |
-| | thresholds (shadow) | 3 | 27.3% | 258 ms | 1.7% | 9.2 | 7 |
-| | **DQN (active)** | **2** | **17.4%** | **163 ms** | **0.5%** | 10.7 | 15 |
-| periodic | thresholds (baseline) | 5 | 21.7% | 252 ms | 2.7% | 6.5 | 10 |
-| | thresholds (shadow) | 4 | 22.7% | 283 ms | 4.0% | 6.6 | 12 |
-| | **DQN (active)** | **3** | 21.7% | **201 ms** | **1.5%** | 7.7 | 15 |
+The pipeline ran twice. **Run 1** (6 CPUs) fine-tuned on 160 real transitions. **Run 2**
+(8 CPUs) continued from it with a 4-hour shadow stage: every profile at 200, 300 and 400
+requests/s, twice (18 segments), for 410 more transitions, plus 69 in the active stage: 639 in
+total. Before run 2, the harness was fixed so that only real cause and effect is learned (see
+the training pipeline), and 6 earlier transitions that spanned a reset were removed.
+
+### Run 2: after 639 real transitions
+
+| Load profile | Controller | Severe failures ↓ | SLO misses ↓ | Avg. latency | Errors | Avg. replicas |
+|---|---|---|---|---|---|---|
+| constant | thresholds | 0 | 4.2% | 47 ms | 0% | 5.9 |
+| | **DQN** | 0 | **0%** | 62 ms | 0% | **5.0** |
+| spike | thresholds | 4 | 22.7% | 256 ms | 2.4% | 9.1 |
+| | **DQN** | **3** | 22.7% | 254 ms | **1.9%** | 10.4 |
+| periodic | thresholds | 4 | 22.7% | 274 ms | 3.7% | 6.4 |
+| | **DQN** | **1** | **13.0%** | **121 ms** | **0.2%** | 6.7 |
 
 (Severe failures are control loops with a crash, latency ≥ 600 ms or error rate ≥ 10%; SLO misses
-are loops with latency above 200 ms. The threshold runs flapped 0–1 times per profile, the DQN
-0–2 times; the stabilization guardrail blocked 2 of its scale-downs. Raw data per control loop:
-[`docs/cluster_runs/`](docs/cluster_runs/).)
+are loops with latency above 200 ms. Raw data per control loop and the online learning curve:
+[`docs/cluster_runs/run2_8cpu/`](docs/cluster_runs/run2_8cpu/).)
 
 ![Real cluster comparison](docs/images/cluster_comparison.png)
 
-What the runs show:
+What changed from run 1 to run 2:
 
-- **Under changing load the DQN kept latency and errors lower.** Spike: average latency 163 ms
-  instead of 252 ms, errors 0.5% instead of 2.5%, and during the spike itself latency was above
-  the SLO for 3 control loops instead of 5 (4 in the shadow run). Periodic: 201 ms instead of
-  252 ms, errors 1.5% instead of 2.7%. It also had 1–2 fewer severe failures in these two
-  profiles.
-- **It scales further, and earlier when requests rise gradually.** During the spike it went up
-  to the 15-replica limit (latency 45–50 ms), while the threshold controller stopped at 11
-  replicas because CPU settled at 70%, below its 80% trigger (latency 50–80 ms). At the end of
-  the periodic run it added replicas while CPU was only 43% but requests were rising, and kept
-  latency at ~25 ms; the threshold controller waited until CPU crossed 80%, by which time latency
-  had reached 68 ms.
-- **On a steady load it over-provisions.** At a constant 300 requests/s it went to 10 replicas
-  where 6 were enough. Latency was 28 ms instead of 45 ms, both far below the SLO, so the four
-  extra pods bought nothing. The safety margin comes from pre-training, where random sharp spikes
-  happen; on a calm cluster it is waste, and the reward's waste term makes that run's total
-  reward slightly negative (−0.7 vs +0.2).
-- **The start of every overload hurts every controller.** Each run starts with 4 replicas,
-  too few for 300–450 requests/s, and the controller adds at most one replica per 30-second
-  loop. Most severe failures and SLO misses happen in those first minutes and right after the
-  spike's jump, in all three runs alike.
+- **The over-provisioning is gone.** In run 1 the DQN kept 8.8 replicas on a constant load that
+  6 can serve. After the longer fine-tuning it uses 5 – fewer than the thresholds – with no SLO
+  miss. The safety margin it brought from simulation (where random sharp spikes happen) was
+  corrected by real experience.
+- **Periodic load is where it wins most.** One severe failure instead of 4, latency less than
+  half, errors 0.2% instead of 3.7%, with 0.3 more replicas on average. It scales up while
+  requests are rising, before CPU reaches the threshold controller's 80% trigger.
+- **The spike is a draw.** Run 1's latency advantage in the spike (163 vs 252 ms) did not repeat.
+  A sudden ×2 jump needs ~5 more replicas, and any controller that adds one per 30-second loop
+  needs 2–3 minutes to get there; most failures happen in those minutes for both controllers.
+  One replica per decision is a deliberate choice: larger steps would overshoot, and the
+  stabilization window would keep the extra pods for 150 s (like the Kubernetes HPA, which also
+  scales up fast but down slowly). Larger steps only when the LSTM forecasts a sharp rise is a
+  possible extension.
+
+Run 1 for reference (6 CPUs, 160 real transitions, raw data in
+[`docs/cluster_runs/run1_6cpu/`](docs/cluster_runs/run1_6cpu/)):
+
+| Load profile | Controller | Severe failures | SLO misses | Avg. latency | Errors | Avg. replicas |
+|---|---|---|---|---|---|---|
+| constant | thresholds / DQN | 0 / 0 | 0% / 0% | 45 / 28 ms | 0% / 0% | 5.8 / 8.8 |
+| spike | thresholds / DQN | 3 / 2 | 22.7% / 17.4% | 252 / 163 ms | 2.5% / 0.5% | 9.0 / 10.7 |
+| periodic | thresholds / DQN | 5 / 3 | 21.7% / 21.7% | 252 / 201 ms | 2.7% / 1.5% | 6.5 / 7.7 |
+
+### Online learning curve
+
+![Online learning curve](docs/images/online_learning_curve.png)
+
+The TD loss did not fall during the shadow stage; it rose slowly from ~6 to ~9 and was flat in
+the second half. The loss is dominated by the rare −100 transitions (severe failures), and the
+replay buffer collected more of them as the run went on, so the average loss reflects what is in
+the buffer more than how well the network predicts. The flat second half is the "stable against
+real noise" criterion of the pipeline; the real test is the active stage, where behaviour
+improved (above).
 
 **Limits of these results.**
 
-- One 12-minute run per profile and stage, so small differences are noise. The shadow run
-  is a second run of the same threshold policy and shows how big that noise is: up to 1 severe
-  failure, 5 points of SLO misses and 30 ms of average latency between two identical policies.
-  The latency and error differences above are larger than that; the 1–2 fewer severe failures
-  are not much larger.
-- Fine-tuning on the cluster was short: 160 real transitions and 388 gradient steps, compared
-  with 189,000 steps of pre-training in simulation. The active run mostly tests how well the
-  calibrated, pre-trained model transfers, not long online learning.
-- Everything ran on one laptop: the target pods, the load generator and Kubernetes itself share
-  6 CPUs.
+- One 12-minute run per profile and stage, so small differences are noise. In run 1, a second
+  run of the same threshold policy (the shadow stage) differed by up to 1 severe failure, 5 points
+  of SLO misses and 30 ms of average latency. The periodic-load improvement and the
+  over-provisioning fix are larger than that; the spike results are within it.
+- Shadow learning only sees the states the threshold controller leads to; what it never does
+  (for example scaling up at 60% CPU) the DQN knows from simulation and from the active stage.
+- Everything ran on one machine: the target pods, the load generator and Kubernetes share the
+  same CPUs (6 in run 1, 8 in run 2).
 
 ### Dashboard
 
