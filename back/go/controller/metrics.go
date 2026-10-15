@@ -48,6 +48,7 @@ type Collector struct {
 	metricsClient metricsv.Interface
 	samples       map[string]counterSample // pod name -> previous /metrics reading
 	restarts      map[string]int32         // pod name -> previous total container restarts
+	crashPending  bool                     // a crash seen in a loop that had no valid reading
 }
 
 func NewCollector(clientset kubernetes.Interface, metricsClient metricsv.Interface) *Collector {
@@ -74,11 +75,26 @@ func (c *Collector) Collect(ctx context.Context, cfg ControllerConfig) (ClusterM
 		return ClusterMetrics{}, fmt.Errorf("listing pods: %w", err)
 	}
 
-	crashed := c.detectCrashes(pods.Items)
+	// A missing reading is an error, never zeros: the loop is skipped (like the Kubernetes HPA
+	// does), because a fake "0% CPU" would make the baseline scale down and teach the DQN
+	// something that never happened. A crash seen meanwhile is reported with the next reading.
+	c.crashPending = c.detectCrashes(pods.Items) || c.crashPending
 	ready := readyPods(pods.Items)
-	cpu, ram := c.resourceUsage(ctx, cfg, ready)
+	if len(ready) == 0 {
+		return ClusterMetrics{}, fmt.Errorf("no ready pods of %s", cfg.TargetDeployment)
+	}
+	// Read the app counters first, so the next loop has a baseline to compute rates from.
 	rates := c.appRates(ctx, cfg, ready)
+	cpu, ram, err := c.resourceUsage(ctx, cfg, ready)
+	if err != nil {
+		return ClusterMetrics{}, err
+	}
+	if rates.PodsMeasured == 0 {
+		return ClusterMetrics{}, fmt.Errorf("no request rates yet: the first reading of the app counters is only a baseline")
+	}
 
+	crashed := c.crashPending
+	c.crashPending = false
 	return ClusterMetrics{
 		CPUPercent:       cpu,
 		RAMPercent:       ram,
@@ -131,11 +147,10 @@ func (c *Collector) detectCrashes(pods []corev1.Pod) bool {
 }
 
 // resourceUsage returns the average CPU and memory of the ready pods, in percent of their limits.
-func (c *Collector) resourceUsage(ctx context.Context, cfg ControllerConfig, ready []corev1.Pod) (float64, float64) {
+func (c *Collector) resourceUsage(ctx context.Context, cfg ControllerConfig, ready []corev1.Pod) (float64, float64, error) {
 	list, err := c.metricsClient.MetricsV1beta1().PodMetricses(cfg.TargetNamespace).List(ctx, metav1.ListOptions{LabelSelector: cfg.TargetLabel})
 	if err != nil {
-		log.Printf("metrics-server: %v (is the metrics-server addon enabled?)", err)
-		return 0, 0
+		return 0, 0, fmt.Errorf("metrics-server: %w (is the metrics-server addon enabled and ready?)", err)
 	}
 	type usage struct{ cpuMilli, memBytes int64 }
 	byPod := map[string]usage{}
@@ -161,9 +176,9 @@ func (c *Collector) resourceUsage(ctx context.Context, cfg ControllerConfig, rea
 		counted++
 	}
 	if counted == 0 {
-		return 0, 0
+		return 0, 0, fmt.Errorf("metrics-server has no CPU/memory reading for the ready pods yet")
 	}
-	return min(cpuSum/float64(counted), 100), min(ramSum/float64(counted), 100)
+	return min(cpuSum/float64(counted), 100), min(ramSum/float64(counted), 100), nil
 }
 
 func podLimits(pod corev1.Pod) (cpuMilli, memBytes int64) {
@@ -200,6 +215,7 @@ type Rates struct {
 	QPS              float64
 	LatencyMs        float64
 	ErrorRatePercent float64
+	PodsMeasured     int // pods with two readings to compare; 0 means no valid rate yet
 }
 
 // computeRates turns two readings of cumulative counters into rates:
@@ -214,6 +230,7 @@ type Rates struct {
 func computeRates(previous, current map[string]counterSample, newPodWindow time.Duration) Rates {
 	var qps, latencySum float64
 	var requests, errors, successes int64
+	measured := 0
 
 	for name, now := range current {
 		before, ok := previous[name]
@@ -234,9 +251,10 @@ func computeRates(previous, current map[string]counterSample, newPodWindow time.
 		errors += now.Counters.ErrorsTotal - before.Counters.ErrorsTotal
 		successes += now.Counters.SuccessTotal - before.Counters.SuccessTotal
 		latencySum += now.Counters.LatencyMsSum - before.Counters.LatencyMsSum
+		measured++
 	}
 
-	rates := Rates{QPS: qps}
+	rates := Rates{QPS: qps, PodsMeasured: measured}
 	if successes > 0 {
 		rates.LatencyMs = latencySum / float64(successes)
 	}

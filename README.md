@@ -150,17 +150,33 @@ All commands run from `back/python` with the virtual environment's Python
 | 4. Run the experiments | `python run_experiments.py` | `runs/experiments/summary.csv`, `summary.png` |
 | 5. Deploy a model to the API | `python promote_model.py --run-name my_run` | `models/dqn.pt`, `models/model_info.json` |
 | 6. Baseline on the cluster | `python run_cluster_stages.py --stage baseline` | `runs/cluster/baseline_<time>/` |
-| 7. Shadow mode on the cluster | `python run_cluster_stages.py --stage shadow` | learns from real transitions |
+| 7. Shadow mode on the cluster | `python run_cluster_stages.py --stage shadow --qps-levels 200,300,400 --rounds 2` | learns from real transitions (about 4 hours) |
 | 8. Active mode | `python run_cluster_stages.py --stage active` | fine-tuning only |
 | 9. Compare the stages | `python run_cluster_stages.py --compare <run folders> --plot cmp.png` | table + figure |
-| 10. Retrain the LSTM on real data | `python train_lstm.py --from-csv data/metrics.csv` | forecaster fitted to the cluster |
+| 10. Plot the online learning curve | `python run_cluster_stages.py --plot-learning learning.png` | TD loss and reward per real transition |
+| 11. Retrain the LSTM on real data | `python train_lstm.py --from-csv data/metrics.csv` | forecaster fitted to the cluster |
 
 Steps 6–8 need the cluster and the API server running (`scripts\start-system.ps1`). Each stage
 runs every load profile from the same starting point (idle traffic, a fixed replica count) and
-records every control loop. The mode can also be switched by hand in the dashboard.
+records every control loop. `--qps-levels` and `--rounds` repeat the profiles at several load
+levels, so a long shadow run sees varied traffic. The script keeps Windows from sleeping while it
+runs. The mode can also be switched by hand in the dashboard.
 
-Online learning saves its own checkpoint (`data/online_dqn.pt`) and replay buffer, and resumes
-from them after a restart. Delete them to restart from the promoted model.
+Online learning saves its own checkpoint (`data/online_dqn.pt`), replay buffer and learning curve
+(`data/online_learning.csv`), and resumes from them after a restart. Delete them to restart from
+the promoted model.
+
+Only real cause and effect is learned:
+
+- **Resets.** Between profiles the script switches the cluster to baseline mode (which does not
+  learn) until the controller has decided once, then resets it. The transition that spans a reset
+  (load switched off, replicas forced with kubectl) was caused by the harness, not by the agent's
+  action, so it is never learned. Six such transitions from the first cluster runs were removed
+  from the replay buffer.
+- **Missing readings.** The controller skips a control loop when a reading is missing (metrics-server
+  not ready yet, the first reading of the app's counters after a restart, no ready pods) instead
+  of reporting zeros, like the Kubernetes HPA. A fake "0% CPU" would make the baseline scale down
+  and teach the DQN something that never happened.
 
 ---
 

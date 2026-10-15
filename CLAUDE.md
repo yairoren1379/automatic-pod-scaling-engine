@@ -138,6 +138,11 @@ Experiments: constant vs decaying epsilon; a grid of learning rate x gamma.
   restart (liveness probe). Re-run the calibration if the target app or its limits change.
 - Shadow mode: the threshold baseline drives the cluster and the DQN learns off-policy from the
   executed actions. Active mode falls back to the baseline if the engine is unreachable.
+- Only real cause and effect is learned. `run_cluster_stages.py` switches to baseline mode
+  (no learning) before every reset, so the transition spanning a reset is never learned. The
+  controller skips a loop when a reading is missing (metrics-server not ready, first reading of
+  the app counters, no ready pods) instead of reporting zeros. Online learning persists its
+  learning curve in `data/online_learning.csv` and resumes `online_steps` from the checkpoint.
 - Without ZooKeeper, the offline scripts and the API (ZK_DISABLED=1) use DEFAULT_CONFIG.
 - The tabular Q-learning + bandit prototype lives in `back/python/legacy/`, not used.
 

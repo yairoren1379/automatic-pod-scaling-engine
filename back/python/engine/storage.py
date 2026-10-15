@@ -12,20 +12,27 @@ METRICS_FIELDS = [
 ]
 
 
-class MetricsCsv:
-    """One row per control loop. Used for the dashboard's history and to retrain the LSTM on
-    real data (python train_lstm.py --from-csv data/metrics.csv)."""
+# The online learning curve: one row per real transition (reward, and the TD loss in the
+# learning modes), so a learning curve that takes hours to record survives restarts.
+LEARNING_FIELDS = ["timestamp", "mode", "reward", "loss", "epsilon", "online_steps", "replay_size"]
 
-    def __init__(self, path: str):
+
+class MetricsCsv:
+    """A time series as CSV, one row per control loop. By default the cluster metrics, used for
+    the dashboard's history and to retrain the LSTM on real data
+    (python train_lstm.py --from-csv data/metrics.csv)."""
+
+    def __init__(self, path: str, fields: list = METRICS_FIELDS):
         self.path = path
+        self.fields = fields
         os.makedirs(os.path.dirname(path), exist_ok=True)
         if not os.path.exists(path):
             with open(path, "w", newline="") as f:
-                csv.DictWriter(f, fieldnames=METRICS_FIELDS).writeheader()
+                csv.DictWriter(f, fieldnames=fields).writeheader()
 
     def append(self, row: dict):
         with open(self.path, "a", newline="") as f:
-            csv.DictWriter(f, fieldnames=METRICS_FIELDS, extrasaction="ignore").writerow(row)
+            csv.DictWriter(f, fieldnames=self.fields, extrasaction="ignore").writerow(row)
 
     def tail(self, count: int) -> list:
         """The last `count` rows, converted back to numbers."""

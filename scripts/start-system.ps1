@@ -22,7 +22,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 & "$PSScriptRoot\patch-metrics-server.ps1"
 
-Start-Window "ZooKeeper port-forward" $root "kubectl port-forward svc/zookeeper 2181:2181"
+# kubectl port-forward can drop after a while (or when the ZooKeeper pod restarts); restart it,
+# so a run of several hours never loses ZooKeeper.
+Start-Window "ZooKeeper port-forward" $root 'while ($true) { kubectl port-forward svc/zookeeper 2181:2181; Write-Host "port-forward stopped, restarting"; Start-Sleep -Seconds 2 }'
 Start-Sleep -Seconds 3
 # The API server creates the ZooKeeper ZNodes with default values if they don't exist yet.
 Start-Window "Learning engine (API :8000)" "$root\back\python" "& '$python' -m api.server"

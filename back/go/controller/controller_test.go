@@ -114,6 +114,22 @@ func TestComputeRatesNewAndRestartedPods(t *testing.T) {
 	if math.Abs(rates.QPS-5) > 1e-9 {
 		t.Errorf("QPS = %f, want 5", rates.QPS)
 	}
+	if rates.PodsMeasured != 1 {
+		t.Errorf("PodsMeasured = %d, want 1 (the old pod seen for the first time is only a baseline)", rates.PodsMeasured)
+	}
+}
+
+func TestComputeRatesFirstReadingIsNotAMeasurement(t *testing.T) {
+	// Right after the controller starts, every pod is seen for the first time: there is no rate
+	// yet, and the collector must not report QPS = 0 as if traffic had stopped.
+	now := time.Unix(1_700_000_000, 0)
+	old := float64(now.Add(-time.Hour).Unix())
+	current := map[string]counterSample{
+		"a": {Counters: AppCounters{RequestsTotal: 5000, SuccessTotal: 5000, StartedAt: old}, At: now},
+	}
+	if rates := computeRates(map[string]counterSample{}, current, 2*time.Minute); rates.PodsMeasured != 0 {
+		t.Errorf("PodsMeasured = %d, want 0", rates.PodsMeasured)
+	}
 }
 
 func TestConfigValidation(t *testing.T) {

@@ -27,7 +27,7 @@ from agents.dqn.dqn_agent import DQNAgent
 from core.actions import ACTION_NAMES, NUM_ACTIONS, action_id
 from core.reward import compute_reward
 from core.state import STATE_SIZE, ClusterMetrics
-from engine.storage import AuditLog, MetricsCsv
+from engine.storage import LEARNING_FIELDS, AuditLog, MetricsCsv
 from predictor.predictor import Predictor
 
 MODES = ("baseline", "shadow", "active")
@@ -42,10 +42,12 @@ class LearningEngine:
         self.online_checkpoint = os.path.join(data_dir, "online_dqn.pt")
         self.online_replay = os.path.join(data_dir, "online_replay.pkl")
         self.metrics_csv = MetricsCsv(os.path.join(data_dir, "metrics.csv"))
+        self.learning_csv = MetricsCsv(os.path.join(data_dir, "online_learning.csv"), LEARNING_FIELDS)
         self.audit_log = AuditLog(os.path.join(data_dir, "audit.jsonl"))
 
         self.config = config
         self.agent = DQNAgent(STATE_SIZE, NUM_ACTIONS, config["dqn"])
+        self.online_steps = 0         # transitions learned from on the real cluster
         self.model_source = self._load_agent()
         lstm_path = os.path.join(models_dir, "lstm.pt")
         self.predictor = Predictor.from_checkpoint(config, lstm_path if os.path.exists(lstm_path) else None)
@@ -55,10 +57,10 @@ class LearningEngine:
         history_points = config["online"]["history_points"]
         self.history = deque(self.metrics_csv.tail(history_points), maxlen=history_points)
         self.audit = deque(self.audit_log.tail(200), maxlen=200)
-        self.learning_curve = deque(maxlen=history_points)   # online reward / loss / epsilon
+        # Online reward / loss / epsilon, continued from the file after a restart.
+        self.learning_curve = deque(self.learning_csv.tail(history_points), maxlen=history_points)
         self.pending = None           # the last decision, waiting for its report and outcome
         self.decision_counter = 0
-        self.online_steps = 0         # transitions learned from on the real cluster
         self.last_contact = None
         self.status = {"mode": config["controller"]["mode"], "decision": None, "metrics": None,
                        "smoothed": None, "forecast": None, "regime": 0, "q_values": None,
@@ -71,7 +73,8 @@ class LearningEngine:
     def _load_agent(self) -> str:
         """Resume online learning if there is a checkpoint, else start from the sim-trained model."""
         if os.path.exists(self.online_checkpoint):
-            self.agent.load(self.online_checkpoint)
+            extra = self.agent.load(self.online_checkpoint)
+            self.online_steps = extra.get("online_steps", 0)
             if os.path.exists(self.online_replay):
                 self.agent.replay.load(self.online_replay)
             return f"online checkpoint ({self.online_checkpoint})"
@@ -162,11 +165,13 @@ class LearningEngine:
             if self.online_steps % self.config["online"]["save_every_steps"] == 0:
                 self.save()
 
-        self.learning_curve.append({
+        point = {
             "timestamp": time.time(), "mode": previous["mode"], "reward": reward.total, "loss": loss,
             "epsilon": self._epsilon(previous["mode"]), "online_steps": self.online_steps,
             "replay_size": len(self.agent.replay),
-        })
+        }
+        self.learning_curve.append(point)
+        self.learning_csv.append(point)
         return reward
 
     def report(self, decision_id: int, executed_action: str, source: str, blocked: bool,
