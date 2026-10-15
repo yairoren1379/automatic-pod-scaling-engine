@@ -163,8 +163,11 @@ levels, so a long shadow run sees varied traffic. The script keeps Windows from 
 runs. The mode can also be switched by hand in the dashboard.
 
 Online learning saves its own checkpoint (`data/online_dqn.pt`), replay buffer and learning curve
-(`data/online_learning.csv`), and resumes from them after a restart. Delete them to restart from
-the promoted model.
+(`data/online_learning.csv`), and resumes from them after a restart. `data/` is not in git; the
+model fine-tuned on the real cluster is shipped as `models/online_dqn.pt` (with its replay buffer),
+so a fresh clone starts from it. The API loads, in order: `data/online_dqn.pt`, then
+`models/online_dqn.pt`, then the simulation-only `models/dqn.pt`. Delete the first two to start
+from simulation only.
 
 Only real cause and effect is learned:
 

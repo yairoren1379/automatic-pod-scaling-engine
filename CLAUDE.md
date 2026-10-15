@@ -143,6 +143,9 @@ Experiments: constant vs decaying epsilon; a grid of learning rate x gamma.
   controller skips a loop when a reading is missing (metrics-server not ready, first reading of
   the app counters, no ready pods) instead of reporting zeros. Online learning persists its
   learning curve in `data/online_learning.csv` and resumes `online_steps` from the checkpoint.
+- The model fine-tuned on the real cluster is shipped in git as `back/python/models/online_dqn.pt`
+  + `online_replay.pkl` (copied from data/ after run 2, 660 online steps). The engine starts from
+  data/ first, then that, then the simulation-only `models/dqn.pt`. Re-copy after more learning.
 - Without ZooKeeper, the offline scripts and the API (ZK_DISABLED=1) use DEFAULT_CONFIG.
 - The tabular Q-learning + bandit prototype lives in `back/python/legacy/`, not used.
 

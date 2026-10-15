@@ -26,3 +26,18 @@ def test_online_learning_resumes_after_a_restart(config, tmp_path):
     curve = restarted.online_learning_curve()
     assert [point["online_steps"] for point in curve] == [1, 2, 3, 4]
     assert all(point["mode"] == "shadow" for point in curve)
+
+
+def test_a_fresh_clone_starts_from_the_shipped_cluster_model(config, tmp_path):
+    # models/online_dqn.pt is the model fine-tuned on the real cluster; with no data/ yet (a
+    # fresh git clone), the engine starts from it, and keeps learning in data/.
+    trained = LearningEngine(config, str(tmp_path / "models"), str(tmp_path / "trained_data"))
+    for _ in range(3):
+        control_step(trained, "shadow")
+    (tmp_path / "models").mkdir()
+    trained.agent.save(str(tmp_path / "models" / "online_dqn.pt"), extra={"online_steps": 2})
+    trained.agent.replay.save(str(tmp_path / "models" / "online_replay.pkl"))
+
+    fresh = LearningEngine(config, str(tmp_path / "models"), str(tmp_path / "data"))
+    assert fresh.model_source.startswith("fine-tuned on the real cluster")
+    assert fresh.online_steps == 2 and len(fresh.agent.replay) == 2

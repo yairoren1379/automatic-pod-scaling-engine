@@ -71,13 +71,21 @@ class LearningEngine:
     # ---------------------------------------------------------------------------------------
 
     def _load_agent(self) -> str:
-        """Resume online learning if there is a checkpoint, else start from the sim-trained model."""
-        if os.path.exists(self.online_checkpoint):
-            extra = self.agent.load(self.online_checkpoint)
-            self.online_steps = extra.get("online_steps", 0)
-            if os.path.exists(self.online_replay):
-                self.agent.replay.load(self.online_replay)
-            return f"online checkpoint ({self.online_checkpoint})"
+        """Which model to start from, in order:
+        1. data/online_dqn.pt: this machine's own online learning, resumed.
+        2. models/online_dqn.pt: the model fine-tuned on the real cluster, shipped in git, so a
+           fresh clone starts from it (its replay buffer too). Learning continues in data/.
+        3. models/dqn.pt: the model pre-trained in simulation only."""
+        shipped = os.path.join(self.models_dir, "online_dqn.pt")
+        for checkpoint, replay, label in (
+                (self.online_checkpoint, self.online_replay, "online checkpoint"),
+                (shipped, os.path.join(self.models_dir, "online_replay.pkl"), "fine-tuned on the real cluster")):
+            if os.path.exists(checkpoint):
+                extra = self.agent.load(checkpoint)
+                self.online_steps = extra.get("online_steps", 0)
+                if os.path.exists(replay):
+                    self.agent.replay.load(replay)
+                return f"{label} ({checkpoint})"
         pretrained = os.path.join(self.models_dir, "dqn.pt")
         if os.path.exists(pretrained):
             self.agent.load(pretrained)
